@@ -1,0 +1,258 @@
+[values-cs]
+  Untranslated (English) (6):
+    - live_shell_split: "Multiview..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+
+[values-da]
+  Untranslated (English) (17):
+    - live_shell_split: "Multiview..."
+    - dashboard_provider_status: "Status..."
+    - dashboard_stat_live: "%1$d live..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - favorites_sort_default: "Manual..."
+    - setup_server_hint: "Server URL..."
+    - setup_m3u_hint: "M3U URL..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_diagnostics_video_codec: "Video Codec..."
+    - player_diagnostics_audio_codec: "Audio Codec..."
+    - epg_jump_prime_time: "Prime Time..."
+    - epg_density_label: "Guide layout..."
+    - multiview_planner_title: "Split Screen Manager..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+    - multiview_thermal_normal: "Normal..."
+
+[values-de]
+  Untranslated (English) (8):
+    - live_shell_split: "Multiview..."
+    - dashboard_provider_status: "Status..."
+    - dashboard_stat_live: "%1$d live..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_diagnostics_decoder: "Decoder..."
+    - multiview_thermal_normal: "Normal..."
+
+[values-el]
+  Untranslated (English) (6):
+    - live_shell_split: "Multiview..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - player_catchup_badge: "Catch-up..."
+    - epg_jump_prime_time: "Prime Time..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-es]
+  Untranslated (English) (2):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+
+[values-fi]
+  Untranslated (English) (13):
+    - live_shell_split: "Multiview..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - saved_preset_live_recall: "Live Recall..."
+    - setup_m3u_hint: "M3U URL..."
+    - player_record: "Record..."
+    - player_aspect_ratio_label: "Aspect %1$s..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_diagnostics_stream_class: "Stream Class..."
+    - player_diagnostics_video_codec: "Video Codec..."
+    - epg_jump_prime_time: "Prime Time..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_pin_audio: "Pin Audio..."
+
+[values-fr]
+  Untranslated (English) (11):
+    - dashboard_provider_source: "Source..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - settings_overview_count_label: "Sources..."
+    - settings_overview_protection_label: "Protection..."
+    - player_aspect_ratio_label: "Aspect %1$s..."
+    - player_diagnostics_source: "Source..."
+    - player_diagnostics_section_source: "Source..."
+    - epg_page_back: "Page -..."
+    - epg_page_forward: "Page +..."
+    - epg_program_provider_type_label: "Source..."
+
+[values-hu]
+  Untranslated (English) (14):
+    - live_shell_split: "Multiview..."
+    - category_options_lock: "Lock Group..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - settings_backup_section_preferences: "Preferences..."
+    - setup_m3u_hint: "M3U URL..."
+    - player_aspect_ratio_label: "Aspect %1$s..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_diagnostics_video_codec: "Video Codec..."
+    - epg_jump_prime_time: "Prime Time..."
+    - epg_title: "TV Guide..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+    - multiview_policy_maximum: "Maximum..."
+
+[values-in]
+  Untranslated (English) (5):
+    - dashboard_provider_status: "Status..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+
+[values-it]
+  Untranslated (English) (5):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - multiview_slot_label: "Slot %1$d..."
+    - settings_privacy: "Privacy..."
+
+[values-iw]
+  Untranslated (English) (2):
+    - live_shell_split: "Multiview..."
+    - settings_github: "GitHub..."
+
+[values-ja]
+  Untranslated (English) (4):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - setup_m3u_hint: "M3U URL..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-ko]
+  Untranslated (English) (4):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - setup_m3u_hint: "M3U URL..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-nb]
+  Untranslated (English) (17):
+    - live_shell_split: "Multiview..."
+    - dashboard_provider_status: "Status..."
+    - dashboard_stat_live: "%1$d live..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_build_desc: "StreamVault for Android TV..."
+    - settings_github: "GitHub..."
+    - setup_server_hint: "Server URL..."
+    - setup_m3u_hint: "M3U URL..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_full_epg: "Full EPG..."
+    - epg_filter_label: "Guide Filter..."
+    - epg_jump_prime_time: "Prime Time..."
+    - epg_program_status_title: "Replay Status..."
+    - epg_program_replay_label: "Replay..."
+    - multiview_planner_title: "Split Screen Manager..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_thermal_normal: "Normal..."
+
+[values-nl]
+  Untranslated (English) (17):
+    - home_recent_channels: "Recent..."
+    - live_shell_split: "Multiview..."
+    - dashboard_provider_status: "Status..."
+    - dashboard_stat_recent: "%1$d recent..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_live_tv_mode_compact: "Compact..."
+    - settings_github: "GitHub..."
+    - favorites_recent_short: "Recent..."
+    - favorites_sort_recent: "Recent..."
+    - player_aspect_ratio_label: "Aspect %1$s..."
+    - player_recent_channels: "Recent..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_action_recent_short: "Recent..."
+    - player_diagnostics_decoder: "Decoder..."
+    - epg_density_compact: "Compact..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - settings_privacy: "Privacy..."
+
+[values-pl]
+  Untranslated (English) (2):
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-pt]
+  Untranslated (English) (1):
+    - settings_github: "GitHub..."
+
+[values-ro]
+  Untranslated (English) (20):
+    - home_recent_channels: "Recent..."
+    - live_shell_split: "Multiview..."
+    - dashboard_stat_recent: "%1$d recent..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_live_tv_mode_compact: "Compact..."
+    - settings_github: "GitHub..."
+    - settings_backup_import_confirm: "Import Backup..."
+    - favorites_recent_short: "Recent..."
+    - favorites_sort_default: "Manual..."
+    - favorites_sort_recent: "Recent..."
+    - player_aspect_ratio_label: "Aspect %1$s..."
+    - player_recent_channels: "Recent..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_action_recent_short: "Recent..."
+    - epg_jump_prime_time: "Prime Time..."
+    - epg_density_compact: "Compact..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+    - multiview_policy_maximum: "Maximum..."
+    - multiview_thermal_normal: "Normal..."
+
+[values-ru]
+  Untranslated (English) (3):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-sv]
+  Untranslated (English) (16):
+    - live_shell_split: "Multiview..."
+    - dashboard_provider_status: "Status..."
+    - dashboard_stat_live: "%1$d live..."
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - saved_preset_live_recall: "Live Recall..."
+    - setup_server_hint: "Server URL..."
+    - setup_m3u_hint: "M3U URL..."
+    - player_time_range_minutes: "%1$s - %2$s | %3$d min..."
+    - player_diagnostics_video_codec: "Video Codec..."
+    - player_diagnostics_audio_codec: "Audio Codec..."
+    - epg_jump_prime_time: "Prime Time..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+    - multiview_slot_label: "Slot %1$d..."
+    - multiview_policy_blocked: "Standby Slot..."
+    - multiview_thermal_normal: "Normal..."
+
+[values-tr]
+  Untranslated (English) (3):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-uk]
+  Untranslated (English) (5):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - saved_preset_live_recall: "Live Recall..."
+    - setup_m3u_hint: "M3U URL..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-vi]
+  Untranslated (English) (3):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."
+
+[values-zh]
+  Untranslated (English) (3):
+    - continue_watching_season_episode: "S%1$d E%2$d..."
+    - settings_github: "GitHub..."
+    - multiview_planner_empty: "No channels in slots yet.\nLong-press a channel to..."

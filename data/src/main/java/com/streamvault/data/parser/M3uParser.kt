@@ -6,7 +6,6 @@ import com.streamvault.domain.util.ChannelNormalizer
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
-import kotlinx.coroutines.runBlocking
 
 /**
  * Robust M3U parser that handles real-world malformed playlists.
@@ -55,16 +54,41 @@ class M3uParser {
     )
 
     fun parse(inputStream: InputStream): ParseResult {
+        val reader = BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8))
         val entries = mutableListOf<M3uEntry>()
         var header = M3uHeader()
-        runBlocking {
-            parseStreaming(
-                inputStream = inputStream,
-                onHeader = {
-                    header = it
-                },
-                onEntry = entries::add
-            )
+        var pendingExtinf: ParsedExtinf? = null
+
+        reader.use {
+            while (true) {
+                val rawLine = reader.readLine() ?: break
+                val line = rawLine.trim()
+                if (line.isEmpty()) {
+                    continue
+                }
+
+                when {
+                    line.startsWith("#EXTM3U", ignoreCase = true) -> {
+                        header = parseHeader(line)
+                    }
+                    line.startsWith("#EXTINF", ignoreCase = true) -> {
+                        pendingExtinf = parseExtinf(line)
+                    }
+                    line.startsWith("#") -> {
+                        pendingExtinf = null
+                    }
+                    pendingExtinf != null -> {
+                        val extinf = pendingExtinf
+                        if (extinf != null) {
+                            parseEntry(extinf, line, header.userAgent)?.let(entries::add)
+                        }
+                        pendingExtinf = null
+                    }
+                    else -> {
+                        pendingExtinf = null
+                    }
+                }
+            }
         }
 
         return ParseResult(header, entries)
@@ -99,7 +123,10 @@ class M3uParser {
                         pendingExtinf = null
                     }
                     pendingExtinf != null -> {
-                        parseEntry(pendingExtinf!!, line, header.userAgent)?.let { onEntry(it) }
+                        val extinf = pendingExtinf
+                        if (extinf != null) {
+                            parseEntry(extinf, line, header.userAgent)?.let { onEntry(it) }
+                        }
                         pendingExtinf = null
                     }
                     else -> {

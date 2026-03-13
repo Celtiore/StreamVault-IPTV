@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -48,25 +49,35 @@ import com.streamvault.domain.model.Series
 @Composable
 fun LiveChannelRowCard(
     channel: Channel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rowHeight: Dp = 68.dp
 ) {
+    val isUltraCompact = rowHeight <= 60.dp
+    val isDense = rowHeight <= 56.dp
+    val contentPadding = if (isUltraCompact) 5.dp else 6.dp
+    val horizontalPadding = if (isUltraCompact) 8.dp else 10.dp
+    val logoWidth = if (isDense) 42.dp else if (isUltraCompact) 46.dp else 52.dp
+    val logoPadding = if (isDense) 5.dp else if (isUltraCompact) 6.dp else 8.dp
+    val contentSpacing = if (isUltraCompact) 8.dp else 10.dp
+    val badgeSpacing = if (isUltraCompact) 3.dp else 4.dp
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
             .background(AppColors.SurfaceElevated)
             .fillMaxWidth()
-            .height(92.dp)
+            .height(rowHeight)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = horizontalPadding, vertical = contentPadding),
+            horizontalArrangement = Arrangement.spacedBy(contentSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .width(64.dp)
+                    .width(logoWidth)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(12.dp))
                     .background(AppColors.SurfaceEmphasis),
@@ -78,7 +89,7 @@ fun LiveChannelRowCard(
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(10.dp),
+                            .padding(logoPadding),
                         contentScale = ContentScale.Fit
                     )
                 } else {
@@ -91,18 +102,20 @@ fun LiveChannelRowCard(
             }
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatusPill(label = "LIVE", containerColor = AppColors.Live)
-                    if (channel.isFavorite) {
-                        StatusPill(label = "SAVED", containerColor = AppColors.Warning, contentColor = Color.Black)
-                    }
-                    if (channel.catchUpSupported) {
-                        StatusPill(label = "CATCH UP", containerColor = AppColors.Brand)
+                if (!isDense) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(badgeSpacing),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        StatusPill(label = "LIVE", containerColor = AppColors.Live)
+                        if (channel.isFavorite) {
+                            StatusPill(label = "SAVED", containerColor = AppColors.Warning, contentColor = Color.Black)
+                        }
+                        if (channel.catchUpSupported) {
+                            StatusPill(label = "CATCH UP", containerColor = AppColors.Brand)
+                        }
                     }
                 }
                 Text(
@@ -112,7 +125,7 @@ fun LiveChannelRowCard(
                         append("  ")
                         append(channel.name)
                     },
-                    style = MaterialTheme.typography.titleSmall,
+                    style = if (isDense) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleSmall,
                     color = AppColors.TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -121,26 +134,28 @@ fun LiveChannelRowCard(
                 if (program != null) {
                     Text(
                         text = program.title,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = if (isDense) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodySmall,
                         color = AppColors.TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     val totalDuration = (program.endTime - program.startTime).coerceAtLeast(1L)
                     val elapsed = (System.currentTimeMillis() - program.startTime).coerceAtLeast(0L)
-                    LinearProgressIndicator(
-                        progress = { (elapsed.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .clip(RoundedCornerShape(999.dp)),
-                        color = AppColors.Info,
-                        trackColor = AppColors.SurfaceEmphasis
-                    )
+                    if (!isDense) {
+                        LinearProgressIndicator(
+                            progress = { (elapsed.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .clip(RoundedCornerShape(999.dp)),
+                            color = AppColors.Info,
+                            trackColor = AppColors.SurfaceEmphasis
+                        )
+                    }
                 } else {
                     Text(
                         text = "No schedule information",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = if (isDense) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodySmall,
                         color = AppColors.TextTertiary
                     )
                 }
@@ -157,7 +172,8 @@ fun LiveChannelRowSurface(
     onLongClick: (() -> Unit)? = null,
     isLocked: Boolean = false,
     isReorderMode: Boolean = false,
-    isDragging: Boolean = false
+    isDragging: Boolean = false,
+    rowHeight: Dp = 68.dp
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -192,7 +208,11 @@ fun LiveChannelRowSurface(
         )
     ) {
         Box {
-            LiveChannelRowCard(channel = channel, modifier = Modifier.fillMaxWidth())
+            LiveChannelRowCard(
+                channel = channel,
+                modifier = Modifier.fillMaxWidth(),
+                rowHeight = rowHeight
+            )
             if (isLocked) {
                 Box(
                     modifier = Modifier

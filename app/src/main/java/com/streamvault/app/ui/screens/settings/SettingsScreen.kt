@@ -37,6 +37,7 @@ import com.streamvault.app.ui.components.dialogs.PremiumDialogFooterButton
 import com.streamvault.app.ui.components.TvEmptyState
 import com.streamvault.app.ui.components.shell.AppNavigationChrome
 import com.streamvault.app.ui.components.shell.AppScreenScaffold
+import com.streamvault.app.ui.model.LiveTvChannelMode
 import com.streamvault.app.ui.theme.*
 import com.streamvault.domain.manager.BackupConflictStrategy
 import com.streamvault.domain.model.Provider
@@ -83,6 +84,7 @@ fun SettingsScreen(
     var showPinDialog by remember { mutableStateOf(false) }
     var showLevelDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showLiveTvModeDialog by remember { mutableStateOf(false) }
     var showClearHistoryDialog by remember { mutableStateOf(false) }
     var pinError by remember { mutableStateOf<String?>(null) }
     var pendingAction by remember { mutableStateOf<ParentalAction?>(null) }
@@ -386,6 +388,11 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_playback),
                     subtitle = stringResource(R.string.settings_playback_subtitle)
                 )
+                ClickableSettingsRow(
+                    label = stringResource(R.string.settings_live_tv_channel_mode),
+                    value = stringResource(uiState.liveTvChannelMode.labelResId()),
+                    onClick = { showLiveTvModeDialog = true }
+                )
                 SettingsRow(label = stringResource(R.string.settings_decoder_mode), value = stringResource(R.string.settings_decoder_auto))
                 SettingsRow(label = stringResource(R.string.settings_buffer_duration), value = stringResource(R.string.settings_buffer_5s))
             }
@@ -536,6 +543,17 @@ fun SettingsScreen(
         }
 
 
+        if (showLiveTvModeDialog) {
+            LiveTvChannelModeDialog(
+                selectedMode = uiState.liveTvChannelMode,
+                onDismiss = { showLiveTvModeDialog = false },
+                onModeSelected = { mode ->
+                    viewModel.setLiveTvChannelMode(mode)
+                    showLiveTvModeDialog = false
+                }
+            )
+        }
+
         if (showPinDialog) {
             PinDialog(
                 onDismissRequest = { 
@@ -592,55 +610,23 @@ fun SettingsScreen(
         }
 
         if (showLanguageDialog) {
+            val systemDefaultLabel = stringResource(R.string.settings_system_default)
+            val languageOptions = remember(systemDefaultLabel) { supportedAppLanguages(systemDefaultLabel) }
             PremiumSelectionDialog(
                 title = stringResource(R.string.settings_select_language),
                 onDismiss = { showLanguageDialog = false }
             ) {
-                LevelOption(
-                    level = 0,
-                    text = stringResource(R.string.settings_system_default),
-                    currentLevel = if (uiState.appLanguage == "system") 0 else -1,
-                    onSelect = {
-                        viewModel.setAppLanguage("system")
-                        showLanguageDialog = false
-                    }
-                )
-                LevelOption(
-                    level = 1,
-                    text = "English",
-                    currentLevel = if (uiState.appLanguage == "en") 1 else -1,
-                    onSelect = {
-                        viewModel.setAppLanguage("en")
-                        showLanguageDialog = false
-                    }
-                )
-                LevelOption(
-                    level = 2,
-                    text = "Hebrew",
-                    currentLevel = if (uiState.appLanguage == "he") 2 else -1,
-                    onSelect = {
-                        viewModel.setAppLanguage("he")
-                        showLanguageDialog = false
-                    }
-                )
-                LevelOption(
-                    level = 3,
-                    text = "Arabic",
-                    currentLevel = if (uiState.appLanguage == "ar") 3 else -1,
-                    onSelect = {
-                        viewModel.setAppLanguage("ar")
-                        showLanguageDialog = false
-                    }
-                )
-                LevelOption(
-                    level = 4,
-                    text = "Russian",
-                    currentLevel = if (uiState.appLanguage == "ru") 4 else -1,
-                    onSelect = {
-                        viewModel.setAppLanguage("ru")
-                        showLanguageDialog = false
-                    }
-                )
+                languageOptions.forEachIndexed { index, option ->
+                    LevelOption(
+                        level = index,
+                        text = option.label,
+                        currentLevel = if (uiState.appLanguage == option.tag) index else -1,
+                        onSelect = {
+                            viewModel.setAppLanguage(option.tag)
+                            showLanguageDialog = false
+                        }
+                    )
+                }
             }
         }
 
@@ -1409,6 +1395,57 @@ private fun SettingsOverviewStat(
 }
 
 @Composable
+private fun LiveTvChannelModeDialog(
+    selectedMode: LiveTvChannelMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (LiveTvChannelMode) -> Unit
+) {
+    PremiumDialog(
+        title = stringResource(R.string.settings_live_tv_channel_mode),
+        subtitle = stringResource(R.string.settings_live_tv_channel_mode_subtitle),
+        onDismissRequest = onDismiss,
+        widthFraction = 0.52f,
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LiveTvChannelMode.entries.forEach { mode ->
+                    Surface(
+                        onClick = { onModeSelected(mode) },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (mode == selectedMode) Primary.copy(alpha = 0.18f) else SurfaceElevated,
+                            focusedContainerColor = Primary.copy(alpha = 0.28f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(mode.labelResId()),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (mode == selectedMode) Primary else OnBackground
+                            )
+                            Text(
+                                text = stringResource(mode.descriptionResId()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurfaceDim
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        footer = {
+            PremiumDialogFooterButton(
+                label = stringResource(R.string.settings_cancel),
+                onClick = onDismiss
+            )
+        }
+    )
+}
+
+@Composable
 private fun SettingsSectionHeader(
     title: String,
     subtitle: String
@@ -1785,6 +1822,62 @@ private fun formatTimestamp(timestampMs: Long): String {
     return java.text.SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(java.util.Date(timestampMs))
 }
 
+private data class AppLanguageOption(
+    val tag: String,
+    val label: String
+)
+
+private fun supportedAppLanguages(systemDefaultLabel: String): List<AppLanguageOption> {
+    val localeTags = listOf(
+        "system",
+        "en",
+        "ar",
+        "cs",
+        "da",
+        "de",
+        "el",
+        "es",
+        "fi",
+        "fr",
+        "he",
+        "hu",
+        "id",
+        "it",
+        "ja",
+        "ko",
+        "nb",
+        "nl",
+        "pl",
+        "pt",
+        "ro",
+        "ru",
+        "sv",
+        "tr",
+        "uk",
+        "vi",
+        "zh"
+    )
+
+    return localeTags.map { tag ->
+        AppLanguageOption(
+            tag = tag,
+            label = if (tag == "system") {
+                systemDefaultLabel
+            } else {
+                val locale = Locale.forLanguageTag(tag)
+                locale.getDisplayLanguage(locale)
+                    .replaceFirstChar { character ->
+                        if (character.isLowerCase()) {
+                            character.titlecase(locale)
+                        } else {
+                            character.toString()
+                        }
+                    }
+            }
+        )
+    }
+}
+
 private fun displayLanguageLabel(languageTag: String, defaultLabel: String): String {
     if (languageTag.isBlank()) return defaultLabel
     val locale = Locale.forLanguageTag(languageTag)
@@ -1797,5 +1890,17 @@ private fun displayLanguageLabel(languageTag: String, defaultLabel: String): Str
                 character.toString()
             }
         }
+}
+
+private fun LiveTvChannelMode.labelResId(): Int = when (this) {
+    LiveTvChannelMode.COMFORTABLE -> R.string.settings_live_tv_mode_comfortable
+    LiveTvChannelMode.COMPACT -> R.string.settings_live_tv_mode_compact
+    LiveTvChannelMode.PRO -> R.string.settings_live_tv_mode_pro
+}
+
+private fun LiveTvChannelMode.descriptionResId(): Int = when (this) {
+    LiveTvChannelMode.COMFORTABLE -> R.string.settings_live_tv_mode_comfortable_desc
+    LiveTvChannelMode.COMPACT -> R.string.settings_live_tv_mode_compact_desc
+    LiveTvChannelMode.PRO -> R.string.settings_live_tv_mode_pro_desc
 }
 

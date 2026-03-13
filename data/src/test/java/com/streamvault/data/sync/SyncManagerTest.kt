@@ -1,7 +1,6 @@
 package com.streamvault.data.sync
 
 import com.google.common.truth.Truth.assertThat
-import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.CategoryDao
 import com.streamvault.data.local.dao.ChannelDao
 import com.streamvault.data.local.dao.MovieDao
@@ -24,6 +23,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -44,10 +44,6 @@ import java.util.zip.GZIPOutputStream
 class SyncManagerTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
-
-    private class ImmediateTransactionRunner : DatabaseTransactionRunner {
-        override suspend fun <T> inTransaction(block: suspend () -> T): T = block()
-    }
 
     // ── In-memory fake ──────────────────────────────────────────────
 
@@ -70,7 +66,7 @@ class SyncManagerTest {
     companion object {
         fun sampleProvider(type: String = "XTREAM_CODES") = ProviderEntity(
             id = 1L, name = "Test", type = type,
-            serverUrl = "http://test.example.com:8080",
+            serverUrl = "https://test.example.com:8080",
             username = "demo", password = "demo"
         )
     }
@@ -91,7 +87,6 @@ class SyncManagerTest {
         providerPresent: Boolean = true,
         providerEntity: ProviderEntity? = null
     ): SyncManager = SyncManager(
-        transactionRunner = ImmediateTransactionRunner(),
         providerDao = FakeProviderDao(
             if (providerPresent) {
                 providerEntity ?: sampleProvider(providerType)
@@ -222,13 +217,13 @@ class SyncManagerTest {
 
         val playlist = tempFolder.newFile("playlist.m3u")
         playlist.writeText(buildString {
-            append("#EXTM3U x-tvg-url=\"http://epg.example.com/guide.xml\"\n")
+            append("#EXTM3U x-tvg-url=\"https://epg.example.com/guide.xml\"\n")
             repeat(2501) { index ->
                 append("#EXTINF:-1 group-title=\"News\",Channel ${index + 1}\n")
-                append("http://live.example.com/ch${index + 1}.ts\n")
+                append("https://live.example.com/ch${index + 1}.ts\n")
             }
             append("#EXTINF:-1 group-title=\"Movies\",Movie One\n")
-            append("http://vod.example.com/movie1.mp4\n")
+            append("https://vod.example.com/movie1.mp4\n")
         })
         val url = playlist.toURI().toString()
         val provider = sampleProvider("M3U").copy(serverUrl = url, m3uUrl = url, epgUrl = "")
@@ -253,7 +248,7 @@ class SyncManagerTest {
         GZIPOutputStream(gzFile.outputStream()).bufferedWriter(Charsets.UTF_8).use { writer ->
             writer.write("#EXTM3U\n")
             writer.write("#EXTINF:-1 group-title=\"Live\",Compressed Channel\n")
-            writer.write("http://live.example.com/compressed.ts\n")
+            writer.write("https://live.example.com/compressed.ts\n")
         }
         val url = gzFile.toURI().toString()
         val provider = sampleProvider("M3U").copy(serverUrl = url, m3uUrl = url)
@@ -266,6 +261,39 @@ class SyncManagerTest {
         }
         assertThat(result.isSuccess).isTrue()
         verify(channelDao, atLeastOnce()).insertAll(any())
+    }
+
+    @Test
+    fun `sync_m3u_ignores_insecure_streams_and_header_epg`() = runTest {
+        whenever(channelDao.getIdMappings(1L)).thenReturn(emptyList())
+        whenever(movieDao.getIdMappings(1L)).thenReturn(emptyList())
+
+        val playlist = tempFolder.newFile("mixed-playlist.m3u")
+        playlist.writeText(
+            """
+            #EXTM3U x-tvg-url="http://epg.example.com/guide.xml"
+            #EXTINF:-1 group-title="News",Secure Channel
+            https://live.example.com/secure.ts
+            #EXTINF:-1 group-title="News",Insecure Channel
+            http://live.example.com/insecure.ts
+            """.trimIndent()
+        )
+
+        val provider = sampleProvider("M3U").copy(serverUrl = playlist.toURI().toString(), m3uUrl = playlist.toURI().toString())
+        val mgr = buildManager(providerType = "M3U", providerEntity = provider)
+
+        val result = mgr.sync(1L, force = true)
+
+        assertThat(result.isSuccess).isTrue()
+        val state = mgr.syncState.first()
+        assertThat(state).isInstanceOf(SyncState.Partial::class.java)
+        val insertedChannels = argumentCaptor<List<com.streamvault.data.local.entity.ChannelEntity>>()
+        verify(channelDao, atLeastOnce()).insertAll(insertedChannels.capture())
+        assertThat(insertedChannels.allValues.flatten()).hasSize(1)
+        assertThat((state as SyncState.Partial).warnings).containsAtLeast(
+            "Ignored insecure EPG URL from playlist header.",
+            "Ignored 1 insecure playlist stream URL(s)."
+        )
     }
 
     // ── M3U sync failure ────────────────────────────────────────────

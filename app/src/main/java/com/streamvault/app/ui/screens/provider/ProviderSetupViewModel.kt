@@ -2,6 +2,7 @@ package com.streamvault.app.ui.screens.provider
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.streamvault.data.util.UrlSecurityPolicy
 import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.Result
 import com.streamvault.domain.repository.ProviderRepository
@@ -72,6 +73,10 @@ class ProviderSetupViewModel @Inject constructor(
             _uiState.update { it.copy(validationError = "Please enter server URL") }
             return
         }
+        UrlSecurityPolicy.validateXtreamServerUrl(serverUrl)?.let { message ->
+            _uiState.update { it.copy(validationError = message) }
+            return
+        }
         if (username.isBlank()) {
             _uiState.update { it.copy(validationError = "Please enter username") }
             return
@@ -114,6 +119,10 @@ class ProviderSetupViewModel @Inject constructor(
 
         if (url.isBlank()) {
             _uiState.update { it.copy(validationError = if (_uiState.value.m3uTab == 0) "Please enter M3U URL" else "Please select a file") }
+            return
+        }
+        UrlSecurityPolicy.validatePlaylistSourceUrl(url)?.let { message ->
+            _uiState.update { it.copy(validationError = message) }
             return
         }
 

@@ -50,6 +50,8 @@ class MultiViewViewModel @Inject constructor(
     private var stableSamples: Int = 0
     private var lastPolicyAdjustmentAt: Long = 0L
     private val lastDroppedFramesBySlot = mutableMapOf<Int, Int>()
+    private val slotStartupJobs = mutableMapOf<Int, kotlinx.coroutines.Job>()
+    private var slotInitVersion: Long = 0L
 
     /** Flow of the current 4 slot channels from the manager */
     val slotsFlow = multiViewManager.slots
@@ -106,7 +108,9 @@ class MultiViewViewModel @Inject constructor(
 
     /** Called when MultiViewScreen is opened — spins up player engines for occupied slots */
     fun initSlots() {
+        val initVersion = ++slotInitVersion
         telemetryJob?.cancel()
+        cancelSlotStartupJobs()
         playerEngines.values.forEach { it.release() }
         playerEngines.clear()
         lastDroppedFramesBySlot.clear()
@@ -159,10 +163,15 @@ class MultiViewViewModel @Inject constructor(
                     updateSlot(index) { it.copy(isLoading = false, playerEngine = null) }
                     return@forEachIndexed
                 }
-                viewModelScope.launch {
+                val startupJob = viewModelScope.launch {
                     kotlinx.coroutines.delay(index * _uiState.value.performancePolicy.startupDelayMs)
+                    if (initVersion != slotInitVersion) return@launch
                     try {
                         val engine = playerEngineProvider.get()
+                        if (initVersion != slotInitVersion) {
+                            engine.release()
+                            return@launch
+                        }
                         playerEngines[index] = engine
                         
                         engine.prepare(
@@ -176,9 +185,14 @@ class MultiViewViewModel @Inject constructor(
                         // Re-apply audio to make sure the focused one is audible
                         applyFocusAudio(_uiState.value.focusedSlotIndex)
                     } catch (e: Exception) {
-                        updateSlot(index) { it.copy(isLoading = false, hasError = true) }
+                        if (initVersion == slotInitVersion) {
+                            updateSlot(index) { it.copy(isLoading = false, hasError = true) }
+                        }
+                    } finally {
+                        slotStartupJobs.remove(index)
                     }
                 }
+                slotStartupJobs[index] = startupJob
             }
         }
 
@@ -218,6 +232,7 @@ class MultiViewViewModel @Inject constructor(
 
     /** Clear a specific slot */
     fun clearSlot(slotIndex: Int) {
+        slotStartupJobs.remove(slotIndex)?.cancel()
         multiViewManager.clearSlot(slotIndex)
         if (pinnedAudioSlotIndex == slotIndex) {
             pinnedAudioSlotIndex = null
@@ -227,6 +242,7 @@ class MultiViewViewModel @Inject constructor(
 
     /** Clear all slots */
     fun clearAll() {
+        cancelSlotStartupJobs()
         multiViewManager.clearAll()
         pinnedAudioSlotIndex = null
         _uiState.value = _uiState.value.copy(pinnedAudioSlotIndex = null)
@@ -335,9 +351,15 @@ class MultiViewViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         telemetryJob?.cancel()
+        cancelSlotStartupJobs()
         unregisterThermalListener()
         playerEngines.values.forEach { it.release() }
         playerEngines.clear()
+    }
+
+    private fun cancelSlotStartupJobs() {
+        slotStartupJobs.values.forEach { job -> job.cancel() }
+        slotStartupJobs.clear()
     }
 
     private fun detectDeviceTier(): DevicePerformanceTier {

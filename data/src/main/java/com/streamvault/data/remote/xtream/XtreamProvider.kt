@@ -6,6 +6,8 @@ import com.streamvault.domain.model.*
 import com.streamvault.domain.provider.IptvProvider
 import com.streamvault.domain.util.ChannelNormalizer
 import java.util.Base64
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Xtream Codes provider implementation.
@@ -21,6 +23,8 @@ class XtreamProvider(
 
     private var serverInfo: XtreamServerInfo? = null
     private val apiEndpoint: String = "${serverUrl.trimEnd('/')}/player_api.php"
+    private val adultCategoryCache = mutableMapOf<ContentType, Set<Long>>()
+    private val adultCategoryCacheMutex = Mutex()
 
     override suspend fun authenticate(): Result<Provider> = try {
         val response = api.authenticate(apiEndpoint, username, password)
@@ -88,6 +92,7 @@ class XtreamProvider(
 
     override suspend fun getLiveCategories(): Result<List<Category>> = try {
         val categories = api.getLiveCategories(apiEndpoint, username, password)
+        cacheAdultCategoryIds(ContentType.LIVE, categories)
         Result.success(categories.map { it.toDomain(ContentType.LIVE) })
     } catch (e: Exception) {
         Result.error("Failed to load live categories: ${e.message}", e)
@@ -108,6 +113,7 @@ class XtreamProvider(
 
     override suspend fun getVodCategories(): Result<List<Category>> = try {
         val categories = api.getVodCategories(apiEndpoint, username, password)
+        cacheAdultCategoryIds(ContentType.MOVIE, categories)
         Result.success(categories.map { it.toDomain(ContentType.MOVIE) })
     } catch (e: Exception) {
         Result.error("Failed to load VOD categories: ${e.message}", e)
@@ -169,6 +175,7 @@ class XtreamProvider(
 
     override suspend fun getSeriesCategories(): Result<List<Category>> = try {
         val categories = api.getSeriesCategories(apiEndpoint, username, password)
+        cacheAdultCategoryIds(ContentType.SERIES, categories)
         Result.success(categories.map { it.toDomain(ContentType.SERIES) })
     } catch (e: Exception) {
         Result.error("Failed to load series categories: ${e.message}", e)
@@ -294,6 +301,9 @@ class XtreamProvider(
     // ── Mappers ────────────────────────────────────────────────────
     
     private suspend fun loadAdultCategoryIds(type: ContentType): Set<Long> {
+        adultCategoryCacheMutex.withLock {
+            adultCategoryCache[type]?.let { return it }
+        }
         val categories = when (type) {
             ContentType.LIVE -> api.getLiveCategories(apiEndpoint, username, password)
             ContentType.MOVIE -> api.getVodCategories(apiEndpoint, username, password)
@@ -304,6 +314,21 @@ class XtreamProvider(
             .filter { AdultContentClassifier.isAdultCategoryName(it.categoryName) }
             .mapNotNull { it.categoryId.toLongOrNull() }
             .toSet()
+            .also { ids ->
+                adultCategoryCacheMutex.withLock {
+                    adultCategoryCache[type] = ids
+                }
+            }
+    }
+
+    private suspend fun cacheAdultCategoryIds(type: ContentType, categories: List<XtreamCategory>) {
+        val ids = categories
+            .filter { AdultContentClassifier.isAdultCategoryName(it.categoryName) }
+            .mapNotNull { it.categoryId.toLongOrNull() }
+            .toSet()
+        adultCategoryCacheMutex.withLock {
+            adultCategoryCache[type] = ids
+        }
     }
 
     private fun resolveAdultFlag(

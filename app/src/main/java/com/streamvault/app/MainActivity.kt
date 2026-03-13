@@ -13,7 +13,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.LayoutDirection
@@ -45,10 +44,10 @@ class MainActivity : ComponentActivity() {
                     conf.setLocale(Locale.getDefault())
                     conf.setLayoutDirection(Locale.getDefault())
                 }
-                // Directly update resources to avoid context wrapping crashes
-                @Suppress("DEPRECATION")
-                currentContext.resources.updateConfiguration(conf, currentContext.resources.displayMetrics)
                 conf
+            }
+            val localizedContext = remember(configuration, currentContext) {
+                currentContext.createConfigurationContext(configuration)
             }
 
             val layoutDirection = remember(configuration) {
@@ -60,7 +59,7 @@ class MainActivity : ComponentActivity() {
             }
 
             CompositionLocalProvider(
-                LocalConfiguration provides configuration,
+                LocalContext provides localizedContext,
                 LocalLayoutDirection provides layoutDirection
             ) {
                 StreamVaultTheme {

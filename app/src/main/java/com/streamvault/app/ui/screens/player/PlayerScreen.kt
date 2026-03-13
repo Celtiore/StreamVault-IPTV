@@ -432,9 +432,15 @@ fun PlayerScreen(
                             viewModel.toggleControls()
                             true
                         }
-                        in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                        in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9,
+                        in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> {
                             if (contentType == "LIVE" && !showChannelListOverlay && !showEpgOverlay && !showChannelInfoOverlay) {
-                                val digit = event.nativeKeyEvent.keyCode - KeyEvent.KEYCODE_0
+                                val keyCode = event.nativeKeyEvent.keyCode
+                                val digit = when (keyCode) {
+                                    in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> keyCode - KeyEvent.KEYCODE_0
+                                    in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 -> keyCode - KeyEvent.KEYCODE_NUMPAD_0
+                                    else -> return@onKeyEvent false
+                                }
                                 viewModel.inputNumericChannelDigit(digit)
                                 true
                             } else {
@@ -691,14 +697,9 @@ fun PlayerScreen(
                     viewModel.closeChannelInfoOverlay()
                     viewModel.openLastVisitedCategory()
                 },
-                onOpenRecentChannels = {
-                    viewModel.closeChannelInfoOverlay()
-                    viewModel.openChannelListOverlay()
-                },
-                onOpenFullControls = {
-                    viewModel.closeChannelInfoOverlay()
-                    viewModel.toggleControls()
-                },
+                currentRecordingStatus = currentChannelRecording?.status,
+                onStartRecording = viewModel::startManualRecording,
+                onStopRecording = viewModel::stopCurrentRecording,
                 onRestartProgram = { viewModel.restartCurrentProgram() },
                 onToggleAspectRatio = { viewModel.toggleAspectRatio() },
                 onToggleDiagnostics = { viewModel.toggleDiagnostics() },

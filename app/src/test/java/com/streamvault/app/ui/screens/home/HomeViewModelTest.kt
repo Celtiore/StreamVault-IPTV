@@ -12,6 +12,7 @@ import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.VirtualCategoryIds
 import com.streamvault.domain.repository.*
 import com.streamvault.domain.usecase.GetCustomCategories
+import com.streamvault.player.PlayerEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -21,6 +22,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.*
 import com.google.common.truth.Truth.assertThat
+import javax.inject.Provider as InjectProvider
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
@@ -34,6 +36,8 @@ class HomeViewModelTest {
     private val playbackHistoryRepository: PlaybackHistoryRepository = mock()
     private val getCustomCategories: GetCustomCategories = mock()
     private val parentalControlManager: ParentalControlManager = mock()
+    private val playerEngine: PlayerEngine = mock()
+    private val playerEngineProvider: InjectProvider<PlayerEngine> = mock()
     private val application: Application = mock()
 
     private lateinit var viewModel: HomeViewModel
@@ -51,27 +55,34 @@ class HomeViewModelTest {
         whenever(favoriteRepository.getFavorites(any())).thenReturn(flowOf(emptyList()))
         whenever(preferencesRepository.defaultCategoryId).thenReturn(flowOf(null))
         whenever(preferencesRepository.getLastLiveCategoryId(any())).thenReturn(flowOf(null))
+        whenever(preferencesRepository.liveTvChannelMode).thenReturn(flowOf("COMPACT"))
+        whenever(preferencesRepository.isIncognitoMode).thenReturn(flowOf(false))
         whenever(playbackHistoryRepository.getRecentlyWatchedByProvider(any(), any())).thenReturn(flowOf(emptyList()))
         whenever(getCustomCategories()).thenReturn(flowOf(emptyList()))
+        whenever(playerEngineProvider.get()).thenReturn(playerEngine)
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
     }
+
+    private fun createViewModel(): HomeViewModel =
+        HomeViewModel(
+            application = application,
+            providerRepository = providerRepository,
+            channelRepository = channelRepository,
+            categoryRepository = categoryRepository,
+            favoriteRepository = favoriteRepository,
+            preferencesRepository = preferencesRepository,
+            epgRepository = epgRepository,
+            playbackHistoryRepository = playbackHistoryRepository,
+            getCustomCategories = getCustomCategories,
+            parentalControlManager = parentalControlManager,
+            playerEngineProvider = playerEngineProvider
+        )
 
     @Test
     fun `when switchProvider is called, it delegates to repository`() = runTest {
@@ -164,18 +175,7 @@ class HomeViewModelTest {
         )
         whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
 
         advanceUntilIdle()
 
@@ -207,18 +207,7 @@ class HomeViewModelTest {
         whenever(playbackHistoryRepository.getRecentlyWatchedByProvider(eq(provider.id), any())).thenReturn(flowOf(emptyList()))
         whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
 
         advanceUntilIdle()
 
@@ -256,18 +245,7 @@ class HomeViewModelTest {
         whenever(preferencesRepository.getLastLiveCategoryId(provider.id)).thenReturn(flowOf(sportsCategory.id))
         whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
 
         advanceUntilIdle()
 
@@ -291,18 +269,7 @@ class HomeViewModelTest {
         whenever(playbackHistoryRepository.getRecentlyWatchedByProvider(eq(provider.id), any())).thenReturn(flowOf(emptyList()))
         whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
 
         advanceUntilIdle()
         viewModel.selectCategory(category)
@@ -331,23 +298,44 @@ class HomeViewModelTest {
         whenever(playbackHistoryRepository.getRecentlyWatchedByProvider(eq(provider.id), any())).thenReturn(flowOf(emptyList()))
         whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
 
-        viewModel = HomeViewModel(
-            application,
-            providerRepository,
-            channelRepository,
-            categoryRepository,
-            favoriteRepository,
-            preferencesRepository,
-            epgRepository,
-            playbackHistoryRepository,
-            getCustomCategories,
-            parentalControlManager
-        )
+        viewModel = createViewModel()
 
         advanceUntilIdle()
         viewModel.selectCategory(recentCategory)
         advanceUntilIdle()
 
         verify(preferencesRepository, never()).setLastLiveCategoryId(provider.id, recentCategory.id)
+    }
+
+    @Test
+    fun `channel search delegates to repository for provider categories`() = runTest {
+        val provider = Provider(
+            id = 30L,
+            name = "Provider",
+            type = ProviderType.M3U,
+            serverUrl = "https://test"
+        )
+        val category = Category(id = 11L, name = "News")
+        whenever(providerRepository.getActiveProvider()).thenReturn(flowOf(provider))
+        whenever(channelRepository.getCategories(provider.id)).thenReturn(flowOf(listOf(category)))
+        whenever(channelRepository.getChannelsByCategory(provider.id, category.id)).thenReturn(
+            flowOf(listOf(Channel(id = 1L, name = "BBC News", providerId = provider.id, streamUrl = "https://stream")))
+        )
+        whenever(channelRepository.searchChannelsByCategory(provider.id, category.id, "bbc")).thenReturn(
+            flowOf(listOf(Channel(id = 1L, name = "BBC News", providerId = provider.id, streamUrl = "https://stream")))
+        )
+        whenever(getCustomCategories()).thenReturn(flowOf(emptyList()))
+        whenever(playbackHistoryRepository.getRecentlyWatchedByProvider(eq(provider.id), any())).thenReturn(flowOf(emptyList()))
+        whenever(favoriteRepository.getFavorites(ContentType.LIVE)).thenReturn(flowOf(emptyList()))
+
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.selectCategory(category)
+        advanceUntilIdle()
+        viewModel.updateChannelSearchQuery("bbc")
+        advanceUntilIdle()
+
+        verify(channelRepository).searchChannelsByCategory(provider.id, category.id, "bbc")
     }
 }

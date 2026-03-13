@@ -7,6 +7,8 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * XMLTV EPG parser using XmlPullParser for memory-efficient streaming parsing.
@@ -19,6 +21,8 @@ import java.util.TimeZone
  * - Missing/malformed data (graceful skip)
  */
 class XmltvParser {
+
+    private val logger = Logger.getLogger(XmltvParser::class.java.name)
 
     private val dateFormats = listOf(
         SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US),
@@ -99,10 +103,99 @@ class XmltvParser {
                 eventType = parser.next()
             }
         } catch (e: Exception) {
-            // Return whatever we've parsed so far rather than failing completely
+            logger.log(
+                Level.WARNING,
+                "XMLTV parse failed after ${programs.size} programme(s); returning partial results",
+                e
+            )
         }
 
         return programs
+    }
+
+    suspend fun parseStreaming(
+        inputStream: InputStream,
+        onProgram: suspend (Program) -> Unit
+    ) {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        parser.setInput(inputStream, "UTF-8")
+
+        var eventType = parser.eventType
+        var currentChannelId: String? = null
+        var currentTitle: String? = null
+        var currentDescription: String? = null
+        var currentStart: Long = 0
+        var currentEnd: Long = 0
+        var currentLang: String = ""
+        var inProgramme = false
+        var currentTag: String? = null
+        var parsedCount = 0
+
+        try {
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                when (eventType) {
+                    XmlPullParser.START_TAG -> {
+                        when (parser.name) {
+                            "programme" -> {
+                                inProgramme = true
+                                currentChannelId = parser.getAttributeValue(null, "channel")
+                                currentStart = parseDate(parser.getAttributeValue(null, "start"))
+                                currentEnd = parseDate(parser.getAttributeValue(null, "stop"))
+                                currentTitle = null
+                                currentDescription = null
+                                currentLang = ""
+                            }
+                            "title" -> {
+                                if (inProgramme) {
+                                    currentLang = parser.getAttributeValue(null, "lang") ?: ""
+                                    currentTag = "title"
+                                }
+                            }
+                            "desc" -> {
+                                if (inProgramme) currentTag = "desc"
+                            }
+                        }
+                    }
+                    XmlPullParser.TEXT -> {
+                        if (inProgramme) {
+                            when (currentTag) {
+                                "title" -> currentTitle = parser.text
+                                "desc" -> currentDescription = parser.text
+                            }
+                            currentTag = null
+                        }
+                    }
+                    XmlPullParser.END_TAG -> {
+                        if (parser.name == "programme" && inProgramme) {
+                            if (currentChannelId != null && currentTitle != null) {
+                                onProgram(
+                                    Program(
+                                        channelId = currentChannelId,
+                                        title = currentTitle,
+                                        description = currentDescription ?: "",
+                                        startTime = currentStart,
+                                        endTime = currentEnd,
+                                        lang = currentLang
+                                    )
+                                )
+                                parsedCount++
+                            }
+                            inProgramme = false
+                        }
+                    }
+                }
+                eventType = parser.next()
+            }
+        } catch (e: Exception) {
+            logger.log(
+                Level.WARNING,
+                "XMLTV streaming parse failed after $parsedCount programme(s)",
+                e
+            )
+            throw e
+        }
     }
 
     private fun parseDate(dateStr: String?): Long {

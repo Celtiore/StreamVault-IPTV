@@ -65,6 +65,19 @@ interface ChannelDao {
     )
     fun search(providerId: Long, query: String): Flow<List<ChannelEntity>>
 
+    @Query(
+        """
+        SELECT c.* FROM channels c
+        JOIN channels_fts ON c.id = channels_fts.rowid
+        WHERE c.provider_id = :providerId
+          AND c.category_id = :categoryId
+          AND channels_fts MATCH :query
+        ORDER BY c.name ASC
+        LIMIT 300
+        """
+    )
+    fun searchByCategory(providerId: Long, categoryId: Long, query: String): Flow<List<ChannelEntity>>
+
     @Query("SELECT * FROM channels WHERE id = :id")
     suspend fun getById(id: Long): ChannelEntity?
 
@@ -76,6 +89,9 @@ interface ChannelDao {
 
     @Query("DELETE FROM channels WHERE provider_id = :providerId")
     suspend fun deleteByProvider(providerId: Long)
+
+    @Query("DELETE FROM channels WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Transaction
     suspend fun replaceAll(providerId: Long, channels: List<ChannelEntity>) {
@@ -164,6 +180,9 @@ interface MovieDao {
 
     @Query("DELETE FROM movies WHERE provider_id = :providerId")
     suspend fun deleteByProvider(providerId: Long)
+
+    @Query("DELETE FROM movies WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Query("""
         UPDATE movies 
@@ -359,8 +378,20 @@ interface CategoryDao {
 
 @Dao
 interface ProgramDao {
-    @Query("SELECT * FROM programs WHERE provider_id = :providerId AND channel_id = :channelId AND start_time >= :startTime AND end_time <= :endTime ORDER BY start_time ASC")
+    @Query("SELECT * FROM programs WHERE provider_id = :providerId AND channel_id = :channelId AND end_time > :startTime AND start_time < :endTime ORDER BY start_time ASC")
     fun getForChannel(providerId: Long, channelId: String, startTime: Long, endTime: Long): Flow<List<ProgramEntity>>
+
+    @Query(
+        """
+        SELECT * FROM programs
+        WHERE provider_id = :providerId
+          AND channel_id IN (:channelIds)
+          AND end_time > :startTime
+          AND start_time < :endTime
+        ORDER BY channel_id ASC, start_time ASC
+        """
+    )
+    fun getForChannels(providerId: Long, channelIds: List<String>, startTime: Long, endTime: Long): Flow<List<ProgramEntity>>
 
     @Query("SELECT * FROM programs WHERE provider_id = :providerId AND channel_id = :channelId AND start_time <= :now AND end_time > :now LIMIT 1")
     fun getNowPlaying(providerId: Long, channelId: String, now: Long = System.currentTimeMillis()): Flow<ProgramEntity?>
@@ -376,6 +407,9 @@ interface ProgramDao {
 
     @Query("DELETE FROM programs WHERE provider_id = :providerId")
     suspend fun deleteByProvider(providerId: Long)
+
+    @Query("UPDATE programs SET provider_id = :targetProviderId WHERE provider_id = :sourceProviderId")
+    suspend fun moveToProvider(sourceProviderId: Long, targetProviderId: Long)
 
     @Query("DELETE FROM programs WHERE provider_id = :providerId AND channel_id = :channelId")
     suspend fun deleteForChannel(providerId: Long, channelId: String)

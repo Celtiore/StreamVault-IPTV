@@ -463,7 +463,7 @@ private fun PlayerBottomBar(
                     )
                     .padding(horizontal = 24.dp, vertical = 22.dp)
             ) {
-            if (contentType == "LIVE" && currentProgram != null) {
+            if (contentType == "LIVE") {
                 PlayerLiveInfo(
                     currentProgram = currentProgram,
                     currentChannelName = currentChannelName,
@@ -506,7 +506,7 @@ private fun PlayerBottomBar(
 
 @Composable
 private fun PlayerLiveInfo(
-    currentProgram: Program,
+    currentProgram: Program?,
     currentChannelName: String?,
     displayChannelNumber: Int,
     aspectRatioLabel: String,
@@ -526,7 +526,7 @@ private fun PlayerLiveInfo(
     onOpenSplitScreen: () -> Unit
 ) {
     val primaryActions = buildList {
-        if (currentProgram.hasArchive) {
+        if (currentProgram?.hasArchive == true) {
             add(PlayerActionSpec(stringResource(R.string.player_restart), onRestartProgram))
             add(PlayerActionSpec(stringResource(R.string.player_archive), onOpenArchive))
         }
@@ -559,18 +559,22 @@ private fun PlayerLiveInfo(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlayerMetaPill(text = stringResource(R.string.player_live_now), accent = true)
                 PlayerMetaPill(text = stringResource(R.string.player_live_channel, displayChannelNumber))
-                if (currentProgram.hasArchive) {
+                if (currentProgram?.hasArchive == true) {
                     PlayerMetaPill(text = stringResource(R.string.player_archive_badge))
                 }
             }
             Text(
-                text = currentProgram.title,
+                text = currentProgram?.title ?: currentChannelName.orEmpty(),
                 style = MaterialTheme.typography.headlineSmall,
                 color = Color.White,
                 maxLines = 1
             )
             Text(
-                text = "$displayChannelNumber. ${currentChannelName.orEmpty()}",
+                text = if (currentProgram != null) {
+                    "$displayChannelNumber. ${currentChannelName.orEmpty()}"
+                } else {
+                    stringResource(R.string.player_no_guide_data)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.68f)
             )
@@ -579,8 +583,8 @@ private fun PlayerLiveInfo(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    val start = currentProgram.startTime
-    val end = currentProgram.endTime
+    val start = currentProgram?.startTime ?: 0L
+    val end = currentProgram?.endTime ?: 0L
     if (start > 0 && end > 0) {
         val now = System.currentTimeMillis()
         val progress = (now - start).toFloat() / (end - start)
@@ -608,6 +612,13 @@ private fun PlayerLiveInfo(
                 color = Color.White.copy(alpha = 0.5f)
             )
         }
+    } else {
+        Text(
+            text = currentChannelName?.let { "$displayChannelNumber. $it" }.orEmpty(),
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.82f)
+        )
+        Spacer(modifier = Modifier.height(10.dp))
     }
 
     PlayerQuickActionRows(primaryActions, secondaryActions)

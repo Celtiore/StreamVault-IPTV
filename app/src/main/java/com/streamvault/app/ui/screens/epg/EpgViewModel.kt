@@ -12,9 +12,6 @@ import com.streamvault.domain.repository.FavoriteRepository
 import com.streamvault.domain.repository.ProviderRepository
 import com.streamvault.data.preferences.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -431,29 +428,14 @@ class EpgViewModel @Inject constructor(
             return GuideProgramsResult(emptyMap(), failedCount = 0)
         }
 
-        val deferredResults = coroutineScope {
-            channels
-                .mapNotNull { channel ->
-                    channel.epgChannelId?.let { epgId -> epgId }
-                }
-                .map { epgId ->
-                    async {
-                        val programs = runCatching {
-                            epgRepository
-                                .getProgramsForChannel(providerId, epgId, windowStart, windowEnd)
-                                .first()
-                        }.getOrElse { emptyList() }
-
-                        val failed = programs.isEmpty()
-                        Triple(epgId, programs, failed)
-                    }
-                }
-                .awaitAll()
-        }
+        val epgIds = channels.mapNotNull { it.epgChannelId }.distinct()
+        val programsByChannel = runCatching {
+            epgRepository.getProgramsForChannels(providerId, epgIds, windowStart, windowEnd).first()
+        }.getOrElse { emptyMap() }
 
         return GuideProgramsResult(
-            programsByChannel = deferredResults.associate { (epgId, programs, _) -> epgId to programs },
-            failedCount = deferredResults.count { (_, _, failed) -> failed }
+            programsByChannel = programsByChannel,
+            failedCount = epgIds.count { epgId -> programsByChannel[epgId].isNullOrEmpty() }
         )
     }
 

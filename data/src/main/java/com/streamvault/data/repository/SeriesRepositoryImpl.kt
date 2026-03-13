@@ -79,6 +79,22 @@ class SeriesRepositoryImpl @Inject constructor(
             }
         }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
 
+    override fun getCategoryPreviewRows(providerId: Long, limitPerCategory: Int): Flow<Map<Long?, List<Series>>> =
+        combine(
+            seriesDao.getByProvider(providerId),
+            preferencesRepository.parentalControlLevel
+        ) { entities: List<SeriesEntity>, level: Int ->
+            if (level == 2) {
+                entities.filter { !it.isUserProtected }
+            } else {
+                entities
+            }
+        }.map { entities ->
+            entities.map { it.toDomain() }
+                .groupBy { it.categoryId }
+                .mapValues { (_, items) -> items.take(limitPerCategory) }
+        }
+
     override fun getTopRatedPreview(providerId: Long, limit: Int): Flow<List<Series>> =
         combine(
             seriesDao.getTopRatedPreview(providerId, limit),

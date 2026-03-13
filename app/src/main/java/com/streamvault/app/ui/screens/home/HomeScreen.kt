@@ -36,6 +36,8 @@ import androidx.tv.material3.*
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import com.streamvault.app.ui.components.CategoryRow
 import com.streamvault.app.ui.components.ChannelCard
 import com.streamvault.app.ui.components.shell.ContentMetadataStrip
@@ -59,10 +61,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.res.stringResource
 import com.streamvault.app.R
+import com.streamvault.app.ui.model.LiveTvChannelMode
 import com.streamvault.app.ui.screens.multiview.MultiViewViewModel
 import com.streamvault.app.ui.screens.multiview.MultiViewPlannerDialog
 import com.streamvault.app.navigation.Routes
 import com.streamvault.domain.model.VirtualCategoryIds
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Player
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private enum class FocusRestoreTarget {
     CATEGORY,
@@ -87,6 +97,21 @@ fun HomeScreen(
     multiViewViewModel: MultiViewViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isProMode = uiState.liveTvChannelMode == LiveTvChannelMode.PRO
+    val isDenseMode = uiState.liveTvChannelMode != LiveTvChannelMode.COMFORTABLE
+    val channelRowHeight = when (uiState.liveTvChannelMode) {
+        LiveTvChannelMode.COMFORTABLE -> 92.dp
+        LiveTvChannelMode.COMPACT -> 54.dp
+        LiveTvChannelMode.PRO -> 52.dp
+    }
+    val channelListSpacing = when (uiState.liveTvChannelMode) {
+        LiveTvChannelMode.COMFORTABLE -> 8.dp
+        LiveTvChannelMode.COMPACT -> 2.dp
+        LiveTvChannelMode.PRO -> 2.dp
+    }
+    val previewChannel = remember(uiState.filteredChannels, uiState.previewChannelId) {
+        uiState.filteredChannels.firstOrNull { it.id == uiState.previewChannelId }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Split screen state
@@ -136,6 +161,7 @@ fun HomeScreen(
                         }
                         
                         pendingUnlockChannel?.let { channel ->
+                             viewModel.clearPreview()
                              onChannelClick(channel, uiState.selectedCategory, uiState.provider)
                              pendingUnlockChannel = null
                         }
@@ -444,35 +470,60 @@ fun HomeScreen(
                     }
                 }
 
-                // Content - Channel Grid
+                // Content - Channel Grid / Pro Preview
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    horizontalArrangement = Arrangement.spacedBy(if (isProMode) 12.dp else 0.dp)
+                ) {
                     Column(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(if (isProMode) 0.92f else 1f)
                             .fillMaxHeight()
                     ) {
-                        // Category Title Header and Search
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 8.dp, top = 2.dp, bottom = 8.dp, end = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .padding(start = 8.dp, top = 2.dp, bottom = if (isDenseMode) 4.dp else 6.dp, end = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(if (isDenseMode) 2.dp else 4.dp)
                         ) {
                             Text(
                                 text = uiState.selectedCategory?.name ?: stringResource(R.string.home_all_channels),
-                                style = MaterialTheme.typography.titleLarge,
+                                style = if (isDenseMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                                 color = OnBackground
                             )
-                            ContentMetadataStrip(
-                                values = buildList {
-                                    add("${stringResource(R.string.live_shell_provider)}: ${uiState.provider?.name ?: stringResource(R.string.playlist_no_provider)}")
-                                    add(stringResource(R.string.live_channel_results, uiState.filteredChannels.size))
-                                    uiState.lastVisitedCategory?.name?.let {
-                                        add("${stringResource(R.string.live_shell_last_group)}: $it")
-                                    }
+                            if (isDenseMode) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${stringResource(R.string.live_shell_provider)}: ${uiState.provider?.name ?: stringResource(R.string.playlist_no_provider)}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = OnSurfaceDim,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.live_channel_results, uiState.filteredChannels.size),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = OnSurfaceDim,
+                                        maxLines = 1
+                                    )
                                 }
-                            )
+                            } else {
+                                ContentMetadataStrip(
+                                    values = buildList {
+                                        add("${stringResource(R.string.live_shell_provider)}: ${uiState.provider?.name ?: stringResource(R.string.playlist_no_provider)}")
+                                        add(stringResource(R.string.live_channel_results, uiState.filteredChannels.size))
+                                        uiState.lastVisitedCategory?.name?.let {
+                                            add("${stringResource(R.string.live_shell_last_group)}: $it")
+                                        }
+                                    }
+                                )
+                            }
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(if (isDenseMode) 8.dp else 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 SearchInput(
@@ -481,7 +532,7 @@ fun HomeScreen(
                                     placeholder = stringResource(R.string.home_search_channels),
                                     onSearch = { focusManager.clearFocus() },
                                     focusRequester = channelSearchFocusRequester,
-                                    modifier = Modifier.width(340.dp)
+                                    modifier = Modifier.width(if (isProMode) 270.dp else if (isDenseMode) 300.dp else 340.dp)
                                 )
                                 if (hasSplitChannels) {
                                     StatusPill(
@@ -490,14 +541,14 @@ fun HomeScreen(
                                 }
                             }
                         }
-                        
+
                         if (uiState.isLoading) {
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(minSize = 180.dp),
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(
-                                    start = LocalSpacing.current.safeHoriz, 
-                                    end = LocalSpacing.current.safeHoriz, 
+                                    start = LocalSpacing.current.safeHoriz,
+                                    end = LocalSpacing.current.safeHoriz,
                                     bottom = LocalSpacing.current.safeBottom
                                 ),
                                 verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.sm),
@@ -505,7 +556,7 @@ fun HomeScreen(
                             ) {
                                 items(20) {
                                     SkeletonCard(
-                                        modifier = Modifier.aspectRatio(16f/9f)
+                                        modifier = Modifier.aspectRatio(16f / 9f)
                                     )
                                 }
                             }
@@ -545,11 +596,9 @@ fun HomeScreen(
                                 }
                             }
                         } else {
-                            // Shared lock state for all items
                             var ignoreNextClick by remember { mutableStateOf(false) }
                             val channelListState = rememberLazyListState()
 
-                            // Auto-reset lock if click never comes (e.g. user drags away)
                             LaunchedEffect(ignoreNextClick) {
                                 if (ignoreNextClick) {
                                     kotlinx.coroutines.delay(1000)
@@ -557,10 +606,8 @@ fun HomeScreen(
                                 }
                             }
 
-                            // Reorder Drag State
                             var draggingChannel by remember { mutableStateOf<Channel?>(null) }
-                            
-                            // Exit drag state if reorder mode is cancelled
+
                             LaunchedEffect(uiState.isChannelReorderMode) {
                                 if (!uiState.isChannelReorderMode) {
                                     draggingChannel = null
@@ -589,12 +636,11 @@ fun HomeScreen(
                                 state = channelListState,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    // Handle BACK key to cancel reorder mode
                                     .onPreviewKeyEvent { event ->
                                         if (uiState.isChannelReorderMode && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
                                             if (event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
                                                 if (draggingChannel != null) {
-                                                    draggingChannel = null // Drop item
+                                                    draggingChannel = null
                                                     true
                                                 } else {
                                                     viewModel.exitChannelReorderMode()
@@ -606,26 +652,27 @@ fun HomeScreen(
                                 contentPadding = PaddingValues(
                                     start = 10.dp,
                                     end = 10.dp,
-                                    bottom = 16.dp
+                                    bottom = if (isDenseMode) 8.dp else 12.dp
                                 ),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                verticalArrangement = Arrangement.spacedBy(channelListSpacing)
                             ) {
                                 items(
                                     items = uiState.filteredChannels,
                                     key = { it.id }
                                 ) { channel ->
-                                    val isLocked = (channel.isAdult || channel.isUserProtected || (uiState.selectedCategory?.isUserProtected ?: false)) && uiState.parentalControlLevel == 1
+                                    val isLocked = (channel.isAdult || channel.isUserProtected || (uiState.selectedCategory?.isUserProtected
+                                        ?: false)) && uiState.parentalControlLevel == 1
                                     val isDraggingThis = draggingChannel == channel
                                     val channelFocusRequester = channelFocusRequesters.getOrPut(channel.id) { FocusRequester() }
-                                    
+
                                     LiveChannelRowSurface(
                                         channel = channel,
                                         isLocked = isLocked,
                                         isReorderMode = uiState.isChannelReorderMode,
                                         isDragging = isDraggingThis,
-                                        onClick = { 
+                                        rowHeight = channelRowHeight,
+                                        onClick = {
                                             if (uiState.isChannelReorderMode) {
-                                                // Toggle drag state
                                                 draggingChannel = if (isDraggingThis) null else channel
                                             } else if (ignoreNextClick) {
                                                 ignoreNextClick = false
@@ -633,6 +680,13 @@ fun HomeScreen(
                                                 if (isLocked) {
                                                     pendingUnlockChannel = channel
                                                     showPinDialog = true
+                                                } else if (isProMode) {
+                                                    if (uiState.previewChannelId == channel.id) {
+                                                        viewModel.clearPreview()
+                                                        onChannelClick(channel, uiState.selectedCategory, uiState.provider)
+                                                    } else {
+                                                        viewModel.previewChannel(channel)
+                                                    }
                                                 } else {
                                                     onChannelClick(channel, uiState.selectedCategory, uiState.provider)
                                                 }
@@ -655,12 +709,19 @@ fun HomeScreen(
                                             }
                                             .onPreviewKeyEvent { event ->
                                                 if (uiState.isChannelReorderMode && isDraggingThis && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
-                                                    // Consume D-pad to move item instead of changing focus
                                                     when (event.nativeKeyEvent.keyCode) {
-                                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> { viewModel.moveChannelUp(channel); true }
-                                                        android.view.KeyEvent.KEYCODE_DPAD_UP -> { viewModel.moveChannelUp(channel); true }
-                                                        android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> { viewModel.moveChannelDown(channel); true }
-                                                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { viewModel.moveChannelDown(channel); true }
+                                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                            viewModel.moveChannelUp(channel); true
+                                                        }
+                                                        android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                                                            viewModel.moveChannelUp(channel); true
+                                                        }
+                                                        android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                                            viewModel.moveChannelDown(channel); true
+                                                        }
+                                                        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                            viewModel.moveChannelDown(channel); true
+                                                        }
                                                         else -> false
                                                     }
                                                 } else false
@@ -670,8 +731,21 @@ fun HomeScreen(
                             }
                         }
                     }
+
+                    if (isProMode) {
+                        LivePreviewPane(
+                            channel = previewChannel,
+                            playerEngine = uiState.previewPlayerEngine,
+                            isLoading = uiState.isPreviewLoading,
+                            errorMessage = uiState.previewErrorMessage,
+                            modifier = Modifier
+                                .weight(1.08f)
+                                .fillMaxHeight()
+                        )
+                    }
                 }
             }
+        }
         }
 
         SnackbarHost(
@@ -756,6 +830,156 @@ fun HomeScreen(
             }
         )
     }
+}
+
+@Composable
+private fun LivePreviewPane(
+    channel: Channel?,
+    playerEngine: com.streamvault.player.PlayerEngine?,
+    isLoading: Boolean,
+    errorMessage: String?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        colors = SurfaceDefaults.colors(containerColor = SurfaceElevated.copy(alpha = 0.72f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.live_preview_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Primary
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(Color.Black, RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                val player = playerEngine?.getPlayerView()
+                if (channel != null && player is Player && errorMessage == null) {
+                    AndroidView(
+                        factory = { context ->
+                            PlayerView(context).apply {
+                                this.player = player
+                                useController = false
+                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                            }
+                        },
+                        update = { view ->
+                            if (view.player != player) {
+                                view.player = player
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.live_preview_placeholder_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = OnBackground,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Text(
+                            text = errorMessage ?: stringResource(R.string.live_preview_placeholder_subtitle),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDim,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+
+                if (isLoading && channel != null) {
+                    Row(
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.62f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = Primary,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.live_preview_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            if (channel != null) {
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OnBackground
+                )
+                channel.currentProgram?.let { program ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = program.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = OnBackground
+                        )
+                        Text(
+                            text = "${formatProgramTime(program.startTime)} - ${formatProgramTime(program.endTime)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDim
+                        )
+                        LinearProgressIndicator(
+                            progress = { program.progressPercent },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp),
+                            color = Primary,
+                            trackColor = SurfaceHighlight
+                        )
+                        if (program.description.isNotBlank()) {
+                            Text(
+                                text = program.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurface,
+                                maxLines = 4,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } ?: Text(
+                    text = stringResource(R.string.live_preview_no_epg),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceDim
+                )
+
+                Text(
+                    text = stringResource(R.string.live_preview_open_hint),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Primary
+                )
+            }
+        }
+    }
+}
+
+private fun formatProgramTime(timestampMs: Long): String {
+    if (timestampMs <= 0L) return "--:--"
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestampMs))
 }
 
 @Composable

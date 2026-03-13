@@ -36,8 +36,8 @@ class PlaybackHistoryRepositoryImpl @Inject constructor(
 
         val existing = dao.get(history.contentId, history.contentType.name, history.providerId)
         val updatedHistory = history.copy(
-            resumePositionMs = 0,
-            totalDurationMs = 0,
+            resumePositionMs = history.resumePositionMs.takeIf { it > 0L } ?: existing?.resumePositionMs ?: 0L,
+            totalDurationMs = history.totalDurationMs.takeIf { it > 0L } ?: existing?.totalDurationMs ?: 0L,
             watchCount = (existing?.watchCount ?: 0) + 1,
             lastWatchedAt = System.currentTimeMillis()
         )

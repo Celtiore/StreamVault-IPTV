@@ -2,7 +2,6 @@ package com.streamvault.data.repository
 
 import com.streamvault.data.local.dao.CategoryDao
 import com.streamvault.data.local.dao.ChannelDao
-import com.streamvault.data.local.entity.CategoryCount
 import com.streamvault.data.local.entity.CategoryEntity
 import com.streamvault.data.local.entity.ChannelEntity
 import com.streamvault.data.mapper.toDomain
@@ -71,22 +70,53 @@ class ChannelRepositoryImpl @Inject constructor(
             groupAndMapChannels(filtered, unlockedCats)
         }
 
+    override fun searchChannelsByCategory(providerId: Long, categoryId: Long, query: String): Flow<List<Channel>> =
+        query.toFtsPrefixQuery().let { ftsQuery ->
+            if (ftsQuery.isBlank()) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    if (categoryId == ChannelRepository.ALL_CHANNELS_ID) {
+                        channelDao.search(providerId, ftsQuery)
+                    } else {
+                        channelDao.searchByCategory(providerId, categoryId, ftsQuery)
+                    },
+                    preferencesRepository.parentalControlLevel,
+                    parentalControlManager.unlockedCategoriesForProvider(providerId)
+                ) { entities, level, unlockedCats ->
+                    val filtered = if (level == 2) {
+                        entities.filter { entity ->
+                            val isUnlocked = entity.categoryId != null && unlockedCats.contains(entity.categoryId)
+                            (!entity.isAdult && !entity.isUserProtected) || isUnlocked
+                        }
+                    } else {
+                        entities
+                    }
+
+                    groupAndMapChannels(filtered, unlockedCats)
+                }
+            }
+        }
+
     override fun getCategories(providerId: Long): Flow<List<Category>> =
         combine(
             categoryDao.getByProviderAndType(providerId, ContentType.LIVE.name),
-            channelDao.getCategoryCounts(providerId),
-            channelDao.getCount(providerId),
+            channelDao.getByProvider(providerId),
             preferencesRepository.parentalControlLevel,
             parentalControlManager.unlockedCategoriesForProvider(providerId)
-        ) { categories: List<CategoryEntity>, counts: List<CategoryCount>, totalCount: Int, level: Int, unlockedCats: Set<Long> ->
-            android.util.Log.d("ChannelRepo", "getCategories: ${categories.size} cats, ${counts.size} counts, total: $totalCount")
-            val countMap = counts.associate { it.categoryId to it.item_count }
-            
+        ) { categories: List<CategoryEntity>, channelEntities: List<ChannelEntity>, level: Int, unlockedCats: Set<Long> ->
+            val filteredChannels = applyVisibilityFilter(channelEntities, level, unlockedCats)
+            val groupedChannels = groupPrimaryChannelEntities(filteredChannels)
+            val countMap = groupedChannels
+                .mapNotNull { entity -> entity.categoryId }
+                .groupingBy { categoryId -> categoryId }
+                .eachCount()
+
             val allChannelsCategory = Category(
                 id = ChannelRepository.ALL_CHANNELS_ID,
                 name = "All Channels",
                 type = ContentType.LIVE,
-                count = totalCount
+                count = groupedChannels.size
             )
             
             val mappedCategories = categories.map { entity ->
@@ -115,7 +145,7 @@ class ChannelRepositoryImpl @Inject constructor(
     override fun searchChannels(providerId: Long, query: String): Flow<List<Channel>> =
         query.toFtsPrefixQuery().let { ftsQuery ->
             if (ftsQuery.isBlank()) {
-            flowOf(emptyList())
+                flowOf(emptyList())
             } else combine(
                 channelDao.search(providerId, ftsQuery),
                 preferencesRepository.parentalControlLevel,
@@ -161,9 +191,7 @@ class ChannelRepositoryImpl @Inject constructor(
     }
 
     private fun groupAndMapChannels(entities: List<ChannelEntity>, unlockedCats: Set<Long>): List<Channel> {
-        return entities.groupBy { 
-            if (it.logicalGroupId.isNotBlank()) it.logicalGroupId else it.id.toString() 
-        }.values.map { group ->
+        return entities.groupBy { channelGroupKey(it) }.values.map { group ->
             // Sort group to pick the primary channel based on reliability and name length
             val sortedGroup = group.sortedWith(compareBy({ it.errorCount }, { it.name.length }))
             val primaryEntity = sortedGroup.first()
@@ -181,6 +209,32 @@ class ChannelRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    private fun applyVisibilityFilter(
+        entities: List<ChannelEntity>,
+        level: Int,
+        unlockedCats: Set<Long>
+    ): List<ChannelEntity> {
+        return if (level == 2) {
+            entities.filter { entity ->
+                val isUnlocked = entity.categoryId != null && unlockedCats.contains(entity.categoryId)
+                (!entity.isAdult && !entity.isUserProtected) || isUnlocked
+            }
+        } else {
+            entities
+        }
+    }
+
+    private fun groupPrimaryChannelEntities(entities: List<ChannelEntity>): List<ChannelEntity> {
+        return entities.groupBy { channelGroupKey(it) }
+            .values
+            .map { group ->
+                group.minWith(compareBy<ChannelEntity> { it.errorCount }.thenBy { it.name.length })
+            }
+    }
+
+    private fun channelGroupKey(entity: ChannelEntity): String =
+        if (entity.logicalGroupId.isNotBlank()) entity.logicalGroupId else entity.id.toString()
 
     private fun String.toFtsPrefixQuery(): String {
         val tokens = trim()

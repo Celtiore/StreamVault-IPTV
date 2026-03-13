@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -58,6 +59,7 @@ import com.streamvault.app.R
 import com.streamvault.app.ui.components.shell.StatusPill
 import com.streamvault.app.ui.design.AppColors
 import com.streamvault.app.ui.screens.player.PlayerDiagnosticsUiState
+import com.streamvault.domain.model.RecordingStatus
 import com.streamvault.app.ui.theme.OnSurfaceDim
 import com.streamvault.app.ui.theme.Primary
 import com.streamvault.app.ui.theme.SurfaceVariant
@@ -107,7 +109,7 @@ private fun PlayerOverlayPanel(
 }
 
 @Composable
-private fun PlayerMetaRow(label: String, value: String) {
+private fun PlayerMetaRow(label: String, value: String, maxLines: Int = 1) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -115,18 +117,18 @@ private fun PlayerMetaRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-        style = MaterialTheme.typography.labelSmall,
-        color = AppColors.TextTertiary,
-        modifier = Modifier.weight(0.44f)
-    )
-    Text(
-        text = value,
-        style = MaterialTheme.typography.labelSmall,
-        color = AppColors.TextPrimary,
-        modifier = Modifier.weight(0.56f),
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis
-    )
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = AppColors.TextTertiary,
+            modifier = Modifier.weight(0.44f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = AppColors.TextPrimary,
+            modifier = Modifier.weight(0.56f),
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -135,7 +137,7 @@ private fun PlayerOverlaySectionLabel(text: String) {
     Text(
         text = text,
         color = Primary,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
         fontWeight = FontWeight.Bold
     )
 }
@@ -152,8 +154,9 @@ fun ChannelInfoOverlay(
     onOverlayInteracted: () -> Unit,
     onOpenFullEpg: () -> Unit,
     onOpenLastGroup: () -> Unit,
-    onOpenRecentChannels: () -> Unit,
-    onOpenFullControls: () -> Unit,
+    currentRecordingStatus: RecordingStatus?,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
     onRestartProgram: () -> Unit,
     onToggleAspectRatio: () -> Unit,
     onToggleDiagnostics: () -> Unit,
@@ -353,12 +356,23 @@ fun ChannelInfoOverlay(
                     modifier = Modifier.focusRequester(focusRequester)
                 )
                 QuickActionButton(
-                    icon = stringResource(R.string.player_action_controls),
-                    label = stringResource(R.string.player_more_controls),
+                    icon = if (currentRecordingStatus == RecordingStatus.RECORDING) {
+                        stringResource(R.string.player_stop_recording)
+                    } else {
+                        stringResource(R.string.player_record)
+                    },
+                    label = if (currentRecordingStatus == RecordingStatus.RECORDING) {
+                        stringResource(R.string.player_stop_recording)
+                    } else {
+                        stringResource(R.string.player_record)
+                    },
                     onClick = {
                         onOverlayInteracted()
-                        onDismiss()
-                        onOpenFullControls()
+                        if (currentRecordingStatus == RecordingStatus.RECORDING) {
+                            onStopRecording()
+                        } else {
+                            onStartRecording()
+                        }
                     },
                     onInteraction = onOverlayInteracted
                 )
@@ -394,15 +408,6 @@ fun ChannelInfoOverlay(
                         onInteraction = onOverlayInteracted
                     )
                 }
-                QuickActionButton(
-                    icon = stringResource(R.string.player_action_recent_short),
-                    label = stringResource(R.string.player_recent_channels),
-                    onClick = {
-                        onOverlayInteracted()
-                        onOpenRecentChannels()
-                    },
-                    onInteraction = onOverlayInteracted
-                )
                 QuickActionButton(
                     icon = stringResource(R.string.player_action_guide),
                     label = stringResource(R.string.player_full_epg),
@@ -872,9 +877,10 @@ fun EpgOverlay(
                             )
                         }
                         if (!currentProgram.description.isNullOrEmpty()) {
+                            val description = currentProgram.description.orEmpty()
                             Spacer(Modifier.height(12.dp))
                             Text(
-                                currentProgram.description!!,
+                                description,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.7f),
                                 maxLines = 6,
@@ -984,18 +990,18 @@ fun DiagnosticsOverlay(
     diagnostics: PlayerDiagnosticsUiState,
     modifier: Modifier = Modifier
 ) {
-    PlayerOverlayPanel(modifier = modifier.width(380.dp)) {
+    PlayerOverlayPanel(modifier = modifier.width(320.dp)) {
         Column(
             modifier = Modifier
-                .heightIn(max = 420.dp)
+                .heightIn(max = 300.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = stringResource(R.string.player_diagnostics_title),
                 color = Primary,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
                 fontWeight = FontWeight.Bold
             )
             PlayerOverlaySectionLabel(stringResource(R.string.player_diagnostics_section_source))
@@ -1025,28 +1031,40 @@ fun DiagnosticsOverlay(
             PlayerMetaRow(stringResource(R.string.player_diagnostics_audio_codec), stats.audioCodec)
             PlayerOverlaySectionLabel(stringResource(R.string.player_diagnostics_section_recovery))
             diagnostics.lastFailureReason?.let { reason ->
-                PlayerMetaRow(stringResource(R.string.player_diagnostics_last_failure), reason)
+                PlayerMetaRow(stringResource(R.string.player_diagnostics_last_failure), reason, maxLines = 3)
             }
             if (diagnostics.recentRecoveryActions.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.player_diagnostics_recovery_actions),
                     color = Primary,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     fontWeight = FontWeight.Bold
                 )
                 diagnostics.recentRecoveryActions.forEach { action ->
-                    Text(action, color = AppColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = action,
+                        color = AppColors.TextSecondary,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             if (diagnostics.troubleshootingHints.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.player_diagnostics_troubleshooting),
                     color = Primary,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     fontWeight = FontWeight.Bold
                 )
                 diagnostics.troubleshootingHints.forEach { hint ->
-                    Text(hint, color = AppColors.TextSecondary, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        text = hint,
+                        color = AppColors.TextSecondary,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

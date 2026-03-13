@@ -16,9 +16,6 @@ import com.streamvault.domain.usecase.GetCustomCategories
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -588,46 +585,51 @@ class MoviesViewModel @Inject constructor(
             }
         }
 
-        params.customCategories
+        val customCategoryPreviewIds = params.customCategories
             .filter { it.id != FAVORITES_SENTINEL_ID }
-            .forEach { category ->
-                val ids = params.allFavorites
+            .associateWith { category ->
+                params.allFavorites
                     .asSequence()
                     .filter { it.groupId == -category.id }
                     .sortedBy { it.position }
                     .map { it.contentId }
+                    .take(PREVIEW_ROW_LIMIT)
                     .toList()
-                if (ids.isNotEmpty()) {
-                    val preview = movieRepository.getMoviesByIds(ids.take(PREVIEW_ROW_LIMIT)).first()
-                        .markFavorites(globalFavoriteIds)
-                    if (preview.isNotEmpty()) {
-                        previewRows[category.name] = preview
-                        countMap[category.name] = ids.size
-                    }
-                }
             }
 
-        val providerPreviews = coroutineScope {
-            params.providerCategories
-                .sortedBy { it.name.lowercase() }
-                .map { category ->
-                    async {
-                        val preview = movieRepository
-                            .getMoviesByCategoryPreview(params.providerId, category.id, PREVIEW_ROW_LIMIT)
-                            .first()
-                            .markFavorites(globalFavoriteIds)
-                        category to preview
-                    }
-                }
-                .awaitAll()
+        val idsToPreload = buildSet {
+            addAll(favoritesIds.take(PREVIEW_ROW_LIMIT))
+            customCategoryPreviewIds.values.forEach { addAll(it) }
+        }
+        val preloadedById = if (idsToPreload.isEmpty()) {
+            emptyMap()
+        } else {
+            movieRepository.getMoviesByIds(idsToPreload.toList()).first().associateBy { it.id }
         }
 
-        providerPreviews.forEach { (category, preview) ->
+        customCategoryPreviewIds.forEach { (category, previewIds) ->
+            if (previewIds.isNotEmpty()) {
+                val preview = previewIds.mapNotNull { preloadedById[it] }.markFavorites(globalFavoriteIds)
+                if (preview.isNotEmpty()) {
+                    previewRows[category.name] = preview
+                    countMap[category.name] = params.allFavorites.count { favorite -> favorite.groupId == -category.id }
+                }
+            }
+        }
+
+        val providerPreviews = movieRepository
+            .getCategoryPreviewRows(params.providerId, PREVIEW_ROW_LIMIT)
+            .first()
+
+        params.providerCategories
+            .sortedBy { it.name.lowercase() }
+            .forEach { category ->
+            val preview = providerPreviews[category.id].orEmpty().markFavorites(globalFavoriteIds)
             if (preview.isNotEmpty()) {
                 previewRows[category.name] = preview
                 countMap[category.name] = params.providerCategoryCounts[category.id] ?: preview.size
             }
-        }
+            }
 
         return MovieCatalogSnapshot(
             grouped = previewRows,

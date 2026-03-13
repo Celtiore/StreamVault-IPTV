@@ -14,27 +14,37 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
 
 @Singleton
 class RecordingManagerImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val gson: Gson
+    private val gson: Gson,
+    private val okHttpClient: OkHttpClient
 ) : RecordingManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,11 +53,12 @@ class RecordingManagerImpl @Inject constructor(
 
     private val itemsState = MutableStateFlow(loadState())
     private val storageState = MutableStateFlow(readStorageState())
+    private val stateMutex = Mutex()
     private val activeJobs = mutableMapOf<String, Job>()
 
     init {
         scope.launch {
-            while (true) {
+            while (isActive) {
                 processSchedules()
                 storageState.value = readStorageState()
                 delay(15_000L)
@@ -79,8 +90,7 @@ class RecordingManagerImpl @Inject constructor(
             outputPath = request.outputPath ?: buildOutputFile(request).absolutePath,
             status = RecordingStatus.RECORDING
         )
-        itemsState.value = itemsState.value + item
-        persistState()
+        appendItem(item)
         startCapture(item)
         storageState.value = readStorageState()
         Result.success(item)
@@ -99,14 +109,13 @@ class RecordingManagerImpl @Inject constructor(
             outputPath = request.outputPath ?: buildOutputFile(request).absolutePath,
             status = RecordingStatus.SCHEDULED
         )
-        itemsState.value = itemsState.value + item
-        persistState()
+        appendItem(item)
         Result.success(item)
     }
 
     override suspend fun stopRecording(recordingId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        activeJobs.remove(recordingId)?.cancel()
-        val item = itemsState.value.firstOrNull { it.id == recordingId }
+        removeActiveJob(recordingId)?.cancel()
+        val item = getItem(recordingId)
             ?: return@withContext Result.error("Recording not found")
         val fileLength = item.outputPath?.let { path -> File(path).takeIf { it.exists() }?.length() } ?: 0L
         updateItem(recordingId) {
@@ -119,86 +128,99 @@ class RecordingManagerImpl @Inject constructor(
     }
 
     override suspend fun cancelRecording(recordingId: String): Result<Unit> = withContext(Dispatchers.IO) {
-        activeJobs.remove(recordingId)?.cancel()
+        removeActiveJob(recordingId)?.cancel()
         updateItem(recordingId) { it.copy(status = RecordingStatus.CANCELLED) }
         Result.success(Unit)
     }
 
-    private fun processSchedules() {
+    private suspend fun processSchedules() {
         val now = System.currentTimeMillis()
-        itemsState.value
+        val snapshot = stateMutex.withLock { itemsState.value }
+
+        snapshot
             .filter { it.status == RecordingStatus.SCHEDULED && it.scheduledStartMs <= now }
             .forEach { scheduled ->
                 if (isAdaptiveStream(scheduled.streamUrl)) {
-                    updateItem(scheduled.id) {
+                    updateItemIf(scheduled.id, expectedStatus = RecordingStatus.SCHEDULED) {
                         it.copy(
                             status = RecordingStatus.FAILED,
                             failureReason = "Scheduled recording supports direct stream URLs only."
                         )
                     }
                 } else {
-                    startCapture(scheduled.copy(status = RecordingStatus.RECORDING))
-                    updateItem(scheduled.id) { current -> current.copy(status = RecordingStatus.RECORDING) }
+                    val updated = updateItemIf(scheduled.id, expectedStatus = RecordingStatus.SCHEDULED) {
+                        it.copy(status = RecordingStatus.RECORDING)
+                    }
+                    if (updated != null) {
+                        startCapture(updated)
+                    }
                 }
             }
 
-        itemsState.value
+        snapshot
             .filter { it.status == RecordingStatus.RECORDING && it.scheduledEndMs in 1 until now }
             .forEach { stopCandidate ->
-                activeJobs.remove(stopCandidate.id)?.cancel()
-                updateItem(stopCandidate.id) { it.copy(status = RecordingStatus.COMPLETED) }
+                removeActiveJob(stopCandidate.id)?.cancel()
+                val fileLength = stopCandidate.outputPath?.let { path -> File(path).takeIf { it.exists() }?.length() } ?: 0L
+                updateItemIf(stopCandidate.id, expectedStatus = RecordingStatus.RECORDING) {
+                    it.copy(
+                        status = if (fileLength > 0L) RecordingStatus.COMPLETED else RecordingStatus.CANCELLED,
+                        scheduledEndMs = now
+                    )
+                }
             }
     }
 
-    private fun startCapture(item: RecordingItem) {
-        if (activeJobs.containsKey(item.id)) return
-        val job = scope.launch {
+    private suspend fun startCapture(item: RecordingItem) {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             val outputFile = File(item.outputPath ?: return@launch)
             outputFile.parentFile?.mkdirs()
             runCatching {
-                val connection = URL(item.streamUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15_000
-                connection.readTimeout = 15_000
-                connection.instanceFollowRedirects = true
-                connection.connect()
-                connection.inputStream.use { input ->
-                    FileOutputStream(outputFile, true).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val bytes = input.read(buffer)
-                            if (bytes <= 0) break
-                            output.write(buffer, 0, bytes)
-                            if (!kotlin.coroutines.coroutineContext.isActive) break
-                        }
-                    }
-                }
+                captureStreamToFile(item, outputFile)
             }.onSuccess {
-                updateItem(item.id) { current ->
+                updateItemIf(item.id, expectedStatus = RecordingStatus.RECORDING) { current ->
                     current.copy(status = RecordingStatus.COMPLETED)
                 }
             }.onFailure { error ->
-                if (error is kotlinx.coroutines.CancellationException) {
+                if (error is CancellationException) {
                     val fileLength = outputFile.takeIf { it.exists() }?.length() ?: 0L
-                    updateItem(item.id) { current ->
+                    updateItemIf(item.id, expectedStatus = RecordingStatus.RECORDING) { current ->
                         current.copy(status = if (fileLength > 0L) RecordingStatus.COMPLETED else RecordingStatus.CANCELLED)
                     }
                 } else {
-                    updateItem(item.id) { current ->
+                    updateItemIf(item.id, expectedStatus = RecordingStatus.RECORDING) { current ->
                         current.copy(status = RecordingStatus.FAILED, failureReason = error.message)
                     }
                 }
             }
-            activeJobs.remove(item.id)
+            removeActiveJob(item.id)
             storageState.value = readStorageState()
         }
-        activeJobs[item.id] = job
+        val replaced = stateMutex.withLock { activeJobs.putIfAbsent(item.id, job) }
+        if (replaced != null) {
+            job.cancel()
+            return
+        }
+        job.start()
     }
 
-    private fun updateItem(recordingId: String, transform: (RecordingItem) -> RecordingItem) {
-        itemsState.value = itemsState.value.map { item ->
-            if (item.id == recordingId) transform(item) else item
+    private suspend fun captureStreamToFile(item: RecordingItem, outputFile: File) {
+        var attempt = 0
+        var retryDelayMs = 1_000L
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            try {
+                streamResponseBody(item.streamUrl, outputFile)
+                return
+            } catch (error: Throwable) {
+                if (error is CancellationException || !isRetryableRecordingError(error) || attempt >= MAX_RECORDING_RETRIES) {
+                    throw error
+                }
+                attempt++
+                delay(retryDelayMs)
+                retryDelayMs = (retryDelayMs * 2).coerceAtMost(8_000L)
+            }
         }
-        persistState()
     }
 
     private fun buildOutputFile(request: RecordingRequest): File {
@@ -216,7 +238,7 @@ class RecordingManagerImpl @Inject constructor(
         )
     }
 
-    private fun persistState() {
+    private fun persistStateLocked() {
         stateFile.parentFile?.mkdirs()
         stateFile.writeText(gson.toJson(itemsState.value))
     }
@@ -232,5 +254,112 @@ class RecordingManagerImpl @Inject constructor(
     private fun isAdaptiveStream(url: String): Boolean {
         val lower = url.lowercase()
         return lower.contains(".m3u8") || lower.contains(".mpd")
+    }
+
+    private suspend fun appendItem(item: RecordingItem) {
+        stateMutex.withLock {
+            itemsState.value = itemsState.value + item
+            persistStateLocked()
+        }
+    }
+
+    private suspend fun getItem(recordingId: String): RecordingItem? =
+        stateMutex.withLock { itemsState.value.firstOrNull { it.id == recordingId } }
+
+    private suspend fun updateItem(
+        recordingId: String,
+        transform: (RecordingItem) -> RecordingItem
+    ): RecordingItem? = stateMutex.withLock {
+        var updated: RecordingItem? = null
+        itemsState.value = itemsState.value.map { item ->
+            if (item.id == recordingId) {
+                transform(item).also { updated = it }
+            } else {
+                item
+            }
+        }
+        if (updated != null) {
+            persistStateLocked()
+        }
+        updated
+    }
+
+    private suspend fun updateItemIf(
+        recordingId: String,
+        expectedStatus: RecordingStatus,
+        transform: (RecordingItem) -> RecordingItem
+    ): RecordingItem? = stateMutex.withLock {
+        var updated: RecordingItem? = null
+        itemsState.value = itemsState.value.map { item ->
+            if (item.id == recordingId && item.status == expectedStatus) {
+                transform(item).also { updated = it }
+            } else {
+                item
+            }
+        }
+        if (updated != null) {
+            persistStateLocked()
+        }
+        updated
+    }
+
+    private suspend fun removeActiveJob(recordingId: String): Job? =
+        stateMutex.withLock { activeJobs.remove(recordingId) }
+
+    private suspend fun streamResponseBody(url: String, outputFile: File) {
+        val request = Request.Builder().url(url).get().build()
+        val call = okHttpClient.newCall(request)
+        val cancellationHandle = coroutineContext[Job]?.invokeOnCompletion { cause ->
+            if (cause is CancellationException) {
+                call.cancel()
+            }
+        }
+        try {
+            call.execute().use { response ->
+                ensureSuccessfulRecordingResponse(response)
+                val body = response.body ?: throw IOException("Recording stream returned an empty body")
+                body.byteStream().use { input ->
+                    FileOutputStream(outputFile, true).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val bytes = input.read(buffer)
+                            if (bytes <= 0) {
+                                break
+                            }
+                            output.write(buffer, 0, bytes)
+                        }
+                    }
+                }
+            }
+        } finally {
+            cancellationHandle?.dispose()
+        }
+    }
+
+    private fun ensureSuccessfulRecordingResponse(response: Response) {
+        if (response.isSuccessful) {
+            return
+        }
+        if (response.code in 500..599 || response.code == 429) {
+            throw IOException("Transient HTTP ${response.code}")
+        }
+        throw IllegalStateException("Recording stream failed with HTTP ${response.code}")
+    }
+
+    private fun isRetryableRecordingError(error: Throwable): Boolean {
+        if (error is IOException) {
+            return true
+        }
+        val message = error.message.orEmpty().lowercase()
+        return message.contains("timeout") ||
+            message.contains("timed out") ||
+            message.contains("connection reset") ||
+            message.contains("connect") ||
+            message.contains("network")
+    }
+
+    private companion object {
+        const val MAX_RECORDING_RETRIES = 3
     }
 }

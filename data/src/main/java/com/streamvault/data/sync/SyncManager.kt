@@ -1,7 +1,6 @@
 package com.streamvault.data.sync
 
 import android.util.Log
-import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.CategoryDao
 import com.streamvault.data.local.dao.ChannelDao
 import com.streamvault.data.local.dao.MovieDao
@@ -17,6 +16,7 @@ import com.streamvault.data.remote.xtream.XtreamApiService
 import com.streamvault.data.remote.xtream.XtreamProvider
 import com.streamvault.data.security.CredentialCrypto
 import com.streamvault.data.util.AdultContentClassifier
+import com.streamvault.data.util.UrlSecurityPolicy
 import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.Movie
 import com.streamvault.domain.model.Provider
@@ -55,7 +55,6 @@ enum class SyncRepairSection {
 
 @Singleton
 class SyncManager @Inject constructor(
-    private val transactionRunner: DatabaseTransactionRunner,
     private val providerDao: ProviderDao,
     private val channelDao: ChannelDao,
     private val movieDao: MovieDao,
@@ -75,7 +74,8 @@ class SyncManager @Inject constructor(
     private data class M3uImportStats(
         val header: M3uParser.M3uHeader,
         val liveCount: Int,
-        val movieCount: Int
+        val movieCount: Int,
+        val warnings: List<String> = emptyList()
     )
 
     private data class StreamedPlaylist(
@@ -187,6 +187,9 @@ class SyncManager @Inject constructor(
         onProgress: ((String) -> Unit)?
     ): SyncOutcome {
         val warnings = mutableListOf<String>()
+        UrlSecurityPolicy.validateXtreamServerUrl(provider.serverUrl)?.let { message ->
+            throw IllegalStateException(message)
+        }
         progress(onProgress, "Connecting to server...")
         val api = XtreamProvider(
             providerId = provider.id,
@@ -246,6 +249,9 @@ class SyncManager @Inject constructor(
                 progress(onProgress, "Downloading EPG...")
                 val base = provider.serverUrl.trimEnd('/')
                 val xmltvUrl = provider.epgUrl.ifBlank { "$base/xmltv.php?username=${provider.username}&password=${provider.password}" }
+                UrlSecurityPolicy.validateOptionalEpgUrl(xmltvUrl)?.let { message ->
+                    throw IllegalStateException(message)
+                }
                 retryTransient { epgRepository.refreshEpg(provider.id, xmltvUrl) }
                 metadata = metadata.copy(lastEpgSync = now)
                 syncMetadataRepository.updateMetadata(metadata)
@@ -272,6 +278,7 @@ class SyncManager @Inject constructor(
             if (stats.liveCount == 0 && stats.movieCount == 0) {
                 throw IllegalStateException("Playlist is empty or contains no supported entries")
             }
+            warnings += stats.warnings
             if (provider.epgUrl.isBlank() && !stats.header.tvgUrl.isNullOrBlank()) {
                 providerDao.updateEpgUrl(provider.id, stats.header.tvgUrl)
             }
@@ -287,14 +294,19 @@ class SyncManager @Inject constructor(
 
         val currentEpgUrl = providerDao.getById(provider.id)?.epgUrl ?: provider.epgUrl
         if (!currentEpgUrl.isNullOrBlank() && (force || !isCacheValid(metadata.lastEpgSync, TTL_6_HOURS, now))) {
-            try {
-                progress(onProgress, "Downloading EPG...")
-                retryTransient { epgRepository.refreshEpg(provider.id, currentEpgUrl) }
-                metadata = metadata.copy(lastEpgSync = now)
-                syncMetadataRepository.updateMetadata(metadata)
-            } catch (e: Exception) {
-                Log.e(TAG, "EPG sync failed (non-fatal): ${e.message}")
-                warnings.add("EPG sync failed")
+            val epgValidationError = UrlSecurityPolicy.validateOptionalEpgUrl(currentEpgUrl)
+            if (epgValidationError != null) {
+                warnings.add(epgValidationError)
+            } else {
+                try {
+                    progress(onProgress, "Downloading EPG...")
+                    retryTransient { epgRepository.refreshEpg(provider.id, currentEpgUrl) }
+                    metadata = metadata.copy(lastEpgSync = now)
+                    syncMetadataRepository.updateMetadata(metadata)
+                } catch (e: Exception) {
+                    Log.e(TAG, "EPG sync failed (non-fatal): ${e.message}")
+                    warnings.add("EPG sync failed")
+                }
             }
         }
 
@@ -315,6 +327,9 @@ class SyncManager @Inject constructor(
         }
         if (epgUrl.isBlank()) {
             throw IllegalStateException("No EPG URL configured for this provider")
+        }
+        UrlSecurityPolicy.validateOptionalEpgUrl(epgUrl)?.let { message ->
+            throw IllegalStateException(message)
         }
         retryTransient { epgRepository.refreshEpg(provider.id, epgUrl) }
         val now = System.currentTimeMillis()
@@ -398,6 +413,9 @@ class SyncManager @Inject constructor(
         includeMovies: Boolean = true,
         batchSize: Int = 1000
     ): M3uImportStats {
+        UrlSecurityPolicy.validatePlaylistSourceUrl(provider.m3uUrl.ifBlank { provider.serverUrl })?.let { message ->
+            throw IllegalStateException(message)
+        }
         progress(onProgress, "Downloading Playlist...")
         val existingChannelIds = if (includeLive) channelDao.getIdMappings(provider.id).associate { it.remoteId to it.id } else emptyMap()
         val existingMovieIds = if (includeMovies) movieDao.getIdMappings(provider.id).associate { it.remoteId to it.id } else emptyMap()
@@ -405,111 +423,128 @@ class SyncManager @Inject constructor(
         val movieCategories = CategoryAccumulator(provider.id, "MOVIE", 10_000L)
         val channelBatch = ArrayList<ChannelEntity>(batchSize)
         val movieBatch = ArrayList<MovieEntity>(batchSize)
+        val seenLiveStreamIds = if (includeLive) mutableSetOf<Long>() else null
+        val seenMovieStreamIds = if (includeMovies) mutableSetOf<Long>() else null
         var header = M3uParser.M3uHeader()
         var liveCount = 0
         var movieCount = 0
         var parsedCount = 0
         var nextMilestone = PROGRESS_INTERVAL
+        val warnings = mutableListOf<String>()
+        var insecureStreamCount = 0
 
-        transactionRunner.inTransaction {
-            if (includeLive) {
-                channelDao.deleteByProvider(provider.id)
-                categoryDao.deleteByProviderAndType(provider.id, "LIVE")
-            }
-            if (includeMovies) {
-                movieDao.deleteByProvider(provider.id)
-                categoryDao.deleteByProviderAndType(provider.id, "MOVIE")
-            }
-
-            openPlaylistStream(provider) { streamed ->
-                progress(onProgress, "Parsing Playlist...")
-                maybeDecompressPlaylist(streamed).use { input ->
-                    m3uParser.parseStreaming(
-                        inputStream = input,
-                        onHeader = { parsedHeader ->
-                            header = parsedHeader
+        openPlaylistStream(provider) { streamed ->
+            progress(onProgress, "Parsing Playlist...")
+            maybeDecompressPlaylist(streamed).use { input ->
+                m3uParser.parseStreaming(
+                    inputStream = input,
+                    onHeader = { parsedHeader ->
+                        val secureEpgUrl = parsedHeader.tvgUrl?.takeIf { UrlSecurityPolicy.isSecureRemoteUrl(it) }
+                        if (parsedHeader.tvgUrl != null && secureEpgUrl == null) {
+                            warnings += "Ignored insecure EPG URL from playlist header."
                         }
-                    ) { entry ->
-                        parsedCount++
-                        if (parsedCount >= nextMilestone) {
-                            progress(onProgress, "Imported $parsedCount playlist entries...")
-                            nextMilestone += PROGRESS_INTERVAL
-                        }
+                        header = parsedHeader.copy(tvgUrl = secureEpgUrl)
+                    }
+                ) { entry ->
+                    parsedCount++
+                    if (parsedCount >= nextMilestone) {
+                        progress(onProgress, "Imported $parsedCount playlist entries...")
+                        nextMilestone += PROGRESS_INTERVAL
+                    }
+                    if (!UrlSecurityPolicy.isAllowedImportedUrl(entry.url)) {
+                        insecureStreamCount++
+                        return@parseStreaming
+                    }
 
-                        if (isVodEntry(entry)) {
-                            if (!includeMovies) {
-                                return@parseStreaming
-                            }
-                            val groupTitle = entry.groupTitle.ifBlank { "Uncategorized" }
-                            val stableStreamId = stableId(provider.id, entry.tvgId, entry.url)
-                            movieCategories.idFor(groupTitle)
-                            movieBatch.add(
-                                Movie(
-                                    id = existingMovieIds[stableStreamId] ?: 0L,
-                                    name = entry.name,
-                                    posterUrl = entry.tvgLogo,
-                                    categoryId = movieCategories.idFor(groupTitle),
-                                    categoryName = groupTitle,
-                                    streamUrl = entry.url,
-                                    providerId = provider.id,
-                                    rating = entry.rating?.toFloatOrNull() ?: 0f,
-                                    year = entry.year,
-                                    genre = entry.genre,
-                                    isAdult = AdultContentClassifier.isAdultCategoryName(groupTitle),
-                                    streamId = stableStreamId
-                                ).toEntity()
-                            )
-                            movieCount++
-                            if (movieBatch.size >= batchSize) {
-                                flushMovieBatch(movieBatch)
-                            }
-                        } else {
-                            if (!includeLive) {
-                                return@parseStreaming
-                            }
-                            val groupTitle = entry.groupTitle.ifBlank { "Uncategorized" }
-                            val stableStreamId = stableId(provider.id, entry.tvgId, entry.url)
-                            liveCategories.idFor(groupTitle)
-                            channelBatch.add(
-                                Channel(
-                                    id = existingChannelIds[stableStreamId] ?: 0L,
-                                    name = entry.name,
-                                    logoUrl = entry.tvgLogo,
-                                    groupTitle = groupTitle,
-                                    categoryId = liveCategories.idFor(groupTitle),
-                                    categoryName = groupTitle,
-                                    epgChannelId = entry.tvgId ?: entry.tvgName,
-                                    number = entry.tvgChno ?: 0,
-                                    streamUrl = entry.url,
-                                    catchUpSupported = entry.catchUp != null,
-                                    catchUpDays = entry.catchUpDays ?: 0,
-                                    catchUpSource = entry.catchUpSource,
-                                    providerId = provider.id,
-                                    isAdult = AdultContentClassifier.isAdultCategoryName(groupTitle),
-                                    streamId = stableStreamId
-                                ).toEntity()
-                            )
-                            liveCount++
-                            if (channelBatch.size >= batchSize) {
-                                flushChannelBatch(channelBatch)
-                            }
+                    val safeLogoUrl = UrlSecurityPolicy.sanitizeImportedAssetUrl(entry.tvgLogo)
+                    val safeCatchUpSource = UrlSecurityPolicy.sanitizeImportedAssetUrl(entry.catchUpSource)
+
+                    if (isVodEntry(entry)) {
+                        if (!includeMovies) {
+                            return@parseStreaming
+                        }
+                        val groupTitle = entry.groupTitle.ifBlank { "Uncategorized" }
+                        val stableStreamId = stableId(provider.id, entry.tvgId, entry.url)
+                        seenMovieStreamIds?.add(stableStreamId)
+                        movieCategories.idFor(groupTitle)
+                        movieBatch.add(
+                            Movie(
+                                id = existingMovieIds[stableStreamId] ?: 0L,
+                                name = entry.name,
+                                posterUrl = safeLogoUrl,
+                                categoryId = movieCategories.idFor(groupTitle),
+                                categoryName = groupTitle,
+                                streamUrl = entry.url,
+                                providerId = provider.id,
+                                rating = entry.rating?.toFloatOrNull() ?: 0f,
+                                year = entry.year,
+                                genre = entry.genre,
+                                isAdult = AdultContentClassifier.isAdultCategoryName(groupTitle),
+                                streamId = stableStreamId
+                            ).toEntity()
+                        )
+                        movieCount++
+                        if (movieBatch.size >= batchSize) {
+                            flushMovieBatch(movieBatch)
+                        }
+                    } else {
+                        if (!includeLive) {
+                            return@parseStreaming
+                        }
+                        val groupTitle = entry.groupTitle.ifBlank { "Uncategorized" }
+                        val stableStreamId = stableId(provider.id, entry.tvgId, entry.url)
+                        seenLiveStreamIds?.add(stableStreamId)
+                        liveCategories.idFor(groupTitle)
+                        channelBatch.add(
+                            Channel(
+                                id = existingChannelIds[stableStreamId] ?: 0L,
+                                name = entry.name,
+                                logoUrl = safeLogoUrl,
+                                groupTitle = groupTitle,
+                                categoryId = liveCategories.idFor(groupTitle),
+                                categoryName = groupTitle,
+                                epgChannelId = entry.tvgId ?: entry.tvgName,
+                                number = entry.tvgChno ?: 0,
+                                streamUrl = entry.url,
+                                catchUpSupported = entry.catchUp != null,
+                                catchUpDays = entry.catchUpDays ?: 0,
+                                catchUpSource = safeCatchUpSource,
+                                providerId = provider.id,
+                                isAdult = AdultContentClassifier.isAdultCategoryName(groupTitle),
+                                streamId = stableStreamId
+                            ).toEntity()
+                        )
+                        liveCount++
+                        if (channelBatch.size >= batchSize) {
+                            flushChannelBatch(channelBatch)
                         }
                     }
                 }
             }
-
-            flushChannelBatch(channelBatch)
-            flushMovieBatch(movieBatch)
-            if (includeLive) {
-                categoryDao.insertAll(liveCategories.entities())
-            }
-            if (includeMovies) {
-                categoryDao.insertAll(movieCategories.entities())
-                movieDao.restoreWatchProgress(provider.id)
-            }
         }
 
-        return M3uImportStats(header = header, liveCount = liveCount, movieCount = movieCount)
+        flushChannelBatch(channelBatch)
+        flushMovieBatch(movieBatch)
+        if (includeLive) {
+            categoryDao.replaceAll(provider.id, "LIVE", liveCategories.entities())
+            pruneStaleChannels(existingChannelIds, seenLiveStreamIds.orEmpty())
+        }
+        if (includeMovies) {
+            categoryDao.replaceAll(provider.id, "MOVIE", movieCategories.entities())
+            pruneStaleMovies(existingMovieIds, seenMovieStreamIds.orEmpty())
+            movieDao.restoreWatchProgress(provider.id)
+        }
+
+        if (insecureStreamCount > 0) {
+            warnings += "Ignored $insecureStreamCount insecure playlist stream URL(s)."
+        }
+
+        return M3uImportStats(
+            header = header,
+            liveCount = liveCount,
+            movieCount = movieCount,
+            warnings = warnings
+        )
     }
 
     private suspend fun openPlaylistStream(
@@ -585,6 +620,36 @@ class SyncManager @Inject constructor(
         }
         movieDao.insertAll(batch.distinctBy { it.streamId })
         batch.clear()
+    }
+
+    private suspend fun pruneStaleChannels(
+        existingChannelIds: Map<Long, Long>,
+        seenStreamIds: Set<Long>
+    ) {
+        val staleIds = existingChannelIds
+            .filterKeys { it !in seenStreamIds }
+            .values
+
+        staleIds.chunked(900).forEach { chunk ->
+            if (chunk.isNotEmpty()) {
+                channelDao.deleteByIds(chunk)
+            }
+        }
+    }
+
+    private suspend fun pruneStaleMovies(
+        existingMovieIds: Map<Long, Long>,
+        seenStreamIds: Set<Long>
+    ) {
+        val staleIds = existingMovieIds
+            .filterKeys { it !in seenStreamIds }
+            .values
+
+        staleIds.chunked(900).forEach { chunk ->
+            if (chunk.isNotEmpty()) {
+                movieDao.deleteByIds(chunk)
+            }
+        }
     }
 
     private fun stableId(providerId: Long, tvgId: String?, url: String): Long {

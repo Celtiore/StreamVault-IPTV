@@ -80,6 +80,22 @@ class MovieRepositoryImpl @Inject constructor(
             }
         }.map { list -> list.map { it.toDomain() } }
 
+    override fun getCategoryPreviewRows(providerId: Long, limitPerCategory: Int): Flow<Map<Long?, List<Movie>>> =
+        combine(
+            movieDao.getByProvider(providerId),
+            preferencesRepository.parentalControlLevel
+        ) { entities: List<MovieEntity>, level: Int ->
+            if (level == 2) {
+                entities.filter { !it.isUserProtected }
+            } else {
+                entities
+            }
+        }.map { entities ->
+            entities.map { it.toDomain() }
+                .groupBy { it.categoryId }
+                .mapValues { (_, items) -> items.take(limitPerCategory) }
+        }
+
     override fun getTopRatedPreview(providerId: Long, limit: Int): Flow<List<Movie>> =
         combine(
             movieDao.getTopRatedPreview(providerId, limit),

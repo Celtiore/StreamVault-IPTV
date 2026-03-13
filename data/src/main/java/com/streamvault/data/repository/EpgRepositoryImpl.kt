@@ -1,6 +1,8 @@
 package com.streamvault.data.repository
 
+import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.ProgramDao
+import com.streamvault.data.local.entity.ProgramEntity
 import com.streamvault.data.mapper.toDomain
 import com.streamvault.data.mapper.toEntity
 import com.streamvault.data.parser.XmltvParser
@@ -20,7 +22,8 @@ import javax.inject.Singleton
 class EpgRepositoryImpl @Inject constructor(
     private val programDao: ProgramDao,
     private val xmltvParser: XmltvParser,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val transactionRunner: DatabaseTransactionRunner
 ) : EpgRepository {
 
     override fun getProgramsForChannel(
@@ -31,6 +34,22 @@ class EpgRepositoryImpl @Inject constructor(
     ): Flow<List<Program>> =
         programDao.getForChannel(providerId, channelId, startTime, endTime)
             .map { entities -> entities.map { it.toDomain() } }
+
+    override fun getProgramsForChannels(
+        providerId: Long,
+        channelIds: List<String>,
+        startTime: Long,
+        endTime: Long
+    ): Flow<Map<String, List<Program>>> {
+        if (channelIds.isEmpty()) {
+            return kotlinx.coroutines.flow.flowOf(emptyMap())
+        }
+        return programDao.getForChannels(providerId, channelIds, startTime, endTime)
+            .map { entities ->
+                entities.map { it.toDomain() }
+                    .groupBy { it.channelId }
+            }
+    }
 
     override fun getNowPlaying(providerId: Long, channelId: String): Flow<Program?> =
         programDao.getNowPlaying(providerId, channelId, System.currentTimeMillis())
@@ -59,7 +78,11 @@ class EpgRepositoryImpl @Inject constructor(
 
     override suspend fun refreshEpg(providerId: Long, epgUrl: String): Result<Unit> =
         withContext(Dispatchers.IO) {
+            val stagingProviderId = -providerId
+            val batch = ArrayList<ProgramEntity>(500)
             try {
+                programDao.deleteByProvider(stagingProviderId)
+
                 val request = Request.Builder().url(epgUrl).build()
                 val response = okHttpClient.newCall(request).execute()
 
@@ -69,21 +92,29 @@ class EpgRepositoryImpl @Inject constructor(
 
                 val body = response.body ?: return@withContext Result.error("Empty EPG response")
 
-                val programs = body.byteStream().use { inputStream ->
-                    xmltvParser.parse(inputStream)
+                body.byteStream().use { inputStream ->
+                    xmltvParser.parseStreaming(inputStream) { program ->
+                        batch.add(program.copy(providerId = stagingProviderId).toEntity())
+                        if (batch.size >= 500) {
+                            programDao.insertAll(batch.toList())
+                            batch.clear()
+                        }
+                    }
                 }
 
-                // Keep provider datasets isolated and avoid stale entries after partial guide updates.
-                programDao.deleteByProvider(providerId)
+                if (batch.isNotEmpty()) {
+                    programDao.insertAll(batch.toList())
+                    batch.clear()
+                }
 
-                // Batch insert in chunks to avoid memory pressure
-                val entities = programs.map { it.copy(providerId = providerId).toEntity() }
-                entities.chunked(500).forEach { chunk ->
-                    programDao.insertAll(chunk)
+                transactionRunner.inTransaction {
+                    programDao.deleteByProvider(providerId)
+                    programDao.moveToProvider(stagingProviderId, providerId)
                 }
 
                 Result.success(Unit)
             } catch (e: Exception) {
+                programDao.deleteByProvider(stagingProviderId)
                 Result.error("Failed to refresh EPG: ${e.message}", e)
             }
         }

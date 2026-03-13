@@ -419,6 +419,7 @@ class Media3PlayerEngine @Inject constructor(
         stopPolling()
         exoPlayer?.release()
         exoPlayer = null
+        scope.cancel()
         _playbackState.value = PlaybackState.IDLE
         _isPlaying.value = false
     }

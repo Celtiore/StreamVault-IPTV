@@ -2,6 +2,7 @@ package com.streamvault.app.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.streamvault.app.ui.model.LiveTvChannelMode
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.data.sync.SyncManager
 import com.streamvault.data.sync.SyncRepairSection
@@ -31,6 +32,15 @@ enum class ProviderWarningAction {
     SERIES
 }
 
+private data class SettingsPreferenceSnapshot(
+    val providers: List<Provider>,
+    val activeProviderId: Long?,
+    val parentalControlLevel: Int,
+    val appLanguage: String,
+    val isIncognitoMode: Boolean,
+    val liveTvChannelMode: LiveTvChannelMode
+)
+
 @HiltViewModel
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModel @Inject constructor(
@@ -55,16 +65,25 @@ class SettingsViewModel @Inject constructor(
                 preferencesRepository.appLanguage,
                 preferencesRepository.isIncognitoMode
             ) { providers, activeId, level, language, incognito ->
-                arrayOf(providers, activeId, level, language, incognito)
-            }.collect { values ->
-                @Suppress("UNCHECKED_CAST")
+                SettingsPreferenceSnapshot(
+                    providers = providers,
+                    activeProviderId = activeId,
+                    parentalControlLevel = level,
+                    appLanguage = language,
+                    isIncognitoMode = incognito,
+                    liveTvChannelMode = LiveTvChannelMode.COMPACT
+                )
+            }.combine(preferencesRepository.liveTvChannelMode) { snapshot, liveTvChannelMode ->
+                snapshot.copy(liveTvChannelMode = LiveTvChannelMode.fromStorage(liveTvChannelMode))
+            }.collect { snapshot ->
                 _uiState.update {
                     it.copy(
-                        providers = values[0] as List<Provider>,
-                        activeProviderId = values[1] as Long?,
-                        parentalControlLevel = values[2] as Int,
-                        appLanguage = values[3] as String,
-                        isIncognitoMode = values[4] as Boolean
+                        providers = snapshot.providers,
+                        activeProviderId = snapshot.activeProviderId,
+                        parentalControlLevel = snapshot.parentalControlLevel,
+                        appLanguage = snapshot.appLanguage,
+                        isIncognitoMode = snapshot.isIncognitoMode,
+                        liveTvChannelMode = snapshot.liveTvChannelMode
                     )
                 }
             }
@@ -156,6 +175,12 @@ class SettingsViewModel @Inject constructor(
     fun setAppLanguage(language: String) {
         viewModelScope.launch {
             preferencesRepository.setAppLanguage(language)
+        }
+    }
+
+    fun setLiveTvChannelMode(mode: LiveTvChannelMode) {
+        viewModelScope.launch {
+            preferencesRepository.setLiveTvChannelMode(mode.name)
         }
     }
 
@@ -435,5 +460,6 @@ data class SettingsUiState(
     val backupImportPlan: BackupImportPlan = BackupImportPlan(),
     val recordingItems: List<RecordingItem> = emptyList(),
     val recordingStorageState: RecordingStorageState = RecordingStorageState(),
-    val isIncognitoMode: Boolean = false
+    val isIncognitoMode: Boolean = false,
+    val liveTvChannelMode: LiveTvChannelMode = LiveTvChannelMode.COMPACT
 )

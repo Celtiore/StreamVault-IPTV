@@ -7,6 +7,7 @@ import com.streamvault.data.remote.xtream.XtreamApiService
 import com.streamvault.data.remote.xtream.XtreamProvider
 import com.streamvault.data.security.CredentialCrypto
 import com.streamvault.data.sync.SyncManager
+import com.streamvault.data.util.UrlSecurityPolicy
 import com.streamvault.domain.model.*
 import com.streamvault.domain.provider.IptvProvider
 import com.streamvault.domain.repository.EpgRepository
@@ -23,6 +24,9 @@ class ProviderRepositoryImpl @Inject constructor(
     private val movieDao: MovieDao,
     private val seriesDao: SeriesDao,
     private val categoryDao: CategoryDao,
+    private val programDao: ProgramDao,
+    private val playbackHistoryDao: PlaybackHistoryDao,
+    private val syncMetadataDao: SyncMetadataDao,
     private val xtreamApiService: XtreamApiService,
     private val syncManager: SyncManager
 ) : ProviderRepository {
@@ -51,6 +55,9 @@ class ProviderRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteProvider(id: Long): Result<Unit> = try {
+        programDao.deleteByProvider(id)
+        playbackHistoryDao.deleteByProvider(id)
+        syncMetadataDao.delete(id)
         channelDao.deleteByProvider(id)
         movieDao.deleteByProvider(id)
         seriesDao.deleteByProvider(id)
@@ -79,6 +86,9 @@ class ProviderRepositoryImpl @Inject constructor(
         onProgress: ((String) -> Unit)?,
         id: Long?
     ): Result<Provider> {
+        UrlSecurityPolicy.validateXtreamServerUrl(serverUrl)?.let { message ->
+            return Result.error(message)
+        }
         onProgress?.invoke("Authenticating...")
         val existingProvider = if (id != null) {
             providerDao.getById(id)
@@ -150,6 +160,9 @@ class ProviderRepositoryImpl @Inject constructor(
         onProgress: ((String) -> Unit)?,
         id: Long?
     ): Result<Provider> = try {
+        UrlSecurityPolicy.validatePlaylistSourceUrl(url)?.let { message ->
+            return Result.error(message)
+        }
         onProgress?.invoke("Validating playlist URL...")
         val providerName = name.ifBlank {
             url.substringAfterLast("/").substringBefore("?").ifBlank { "M3U Playlist" }
@@ -251,12 +264,13 @@ class ProviderRepositoryImpl @Inject constructor(
         } else {
             // M3U catch-up
             val source = channel?.catchUpSource ?: return null
-            
-            // Substitute variables in template
+
+            // Substitute common provider placeholder variants.
             source.replace("{start}", start.toString())
                 .replace("{end}", end.toString())
                 .replace("{duration}", (end - start).toString())
                 .replace("{utc}", start.toString())
+                .replace("{utcend}", end.toString())
                 .replace("{lutc}", end.toString())
                 .replace("{timestamp}", start.toString())
         }
