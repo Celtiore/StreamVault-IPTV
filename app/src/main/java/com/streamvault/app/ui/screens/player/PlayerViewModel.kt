@@ -1016,6 +1016,9 @@ class PlayerViewModel @Inject constructor(
         _displayChannelNumber.value = resolveChannelNumber(channel, index)
         _recentChannels.update { channels -> channels.filterNot { it.id == channel.id } }
 
+        // Enable scrubbing mode for fast channel start — key-frame-only decoding
+        playerEngine.setScrubbingMode(true)
+
         viewModelScope.launch {
             val resolvedUrl = resolvePlaybackUrl(channel.streamUrl, channel.id, channel.providerId, ContentType.LIVE)
                 ?: return@launch
@@ -1026,7 +1029,16 @@ class PlayerViewModel @Inject constructor(
             )
             playerEngine.prepare(streamInfo)
             playerEngine.play()
+
+            // Once the first frame is on screen, turn off scrubbing for full quality
+            playerEngine.playbackState
+                .filter { it == com.streamvault.player.PlaybackState.READY }
+                .take(1)
+                .collect { playerEngine.setScrubbingMode(false) }
         }
+
+        // Pre-warm the next channel in sequence so the subsequent zap is near-instant
+        preloadAdjacentChannel(index)
         
         fetchEpg(currentProviderId, channel.epgChannelId)
         
@@ -1041,6 +1053,29 @@ class PlayerViewModel @Inject constructor(
         if (currentContentType == ContentType.LIVE) {
             recordLivePlayback(channel)
             scheduleZapBufferWatchdog(index)
+        }
+    }
+
+    /**
+     * Pre-warm the next channel's media source so switching is near-instant.
+     * Only the manifest/first segment is parsed — no full buffering.
+     */
+    private fun preloadAdjacentChannel(currentIndex: Int) {
+        if (channelList.size < 2) return
+        val nextIndex = (currentIndex + 1) % channelList.size
+        val nextChannel = channelList[nextIndex]
+        viewModelScope.launch {
+            val nextUrl = resolvePlaybackUrl(
+                nextChannel.streamUrl, nextChannel.id,
+                nextChannel.providerId, ContentType.LIVE
+            ) ?: return@launch
+            playerEngine.preload(
+                com.streamvault.domain.model.StreamInfo(
+                    url = nextUrl,
+                    title = nextChannel.name,
+                    streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+                )
+            )
         }
     }
 

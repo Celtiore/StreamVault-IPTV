@@ -16,6 +16,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ScrubbingModeParameters
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
@@ -73,6 +74,11 @@ class Media3PlayerEngine @Inject constructor(
     private var shouldResumeOnAudioFocusGain = false
     private var currentVolume = 1f
     private var isDucked = false
+    /** Remembers the volume before mute so unmute restores it. */
+    private var volumeBeforeMute = 1f
+    /** Pre-warmed media source for rapid next-channel start. */
+    private var preloadedSource: MediaSource? = null
+    private var preloadedStreamInfo: StreamInfo? = null
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
@@ -144,6 +150,12 @@ class Media3PlayerEngine @Inject constructor(
     private val _playerStats = MutableStateFlow(PlayerStats())
     override val playerStats: StateFlow<PlayerStats> = _playerStats.asStateFlow()
 
+    private val _isMuted = MutableStateFlow(false)
+    override val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
+
+    private val _mediaTitle = MutableStateFlow<String?>(null)
+    override val mediaTitle: StateFlow<String?> = _mediaTitle.asStateFlow()
+
     private fun getOrCreatePlayer(): ExoPlayer {
         return exoPlayer ?: createPlayer().also {
             exoPlayer = it
@@ -162,14 +174,16 @@ class Media3PlayerEngine @Inject constructor(
             )
         }
 
-        // Tuned for IPTV live streams: larger buffer for variable network conditions
+        // Tuned for IPTV live streams: aggressive start with comfortable cruise buffer.
+        // Low buffer-for-playback gets the first frame on screen sooner during channel zapping.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000, // min buffer
-                60_000, // max buffer
-                2500,   // buffer for playback
-                5000    // buffer for rebuffering
+                15_000, // min buffer – keep smaller so the player starts faster
+                60_000, // max buffer – comfortable cruise; avoids OOM on 100k playlists
+                500,    // buffer for playback – half-second is enough for key-frame start
+                2500    // buffer for rebuffering – recover quickly on network hiccup
             )
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         val trackSelector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(context).apply {
@@ -183,6 +197,8 @@ class Media3PlayerEngine @Inject constructor(
         return ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
+            .setSeekBackIncrementMs(10_000)
+            .setSeekForwardIncrementMs(10_000)
             .setAudioAttributes(
                 Media3AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -289,6 +305,15 @@ class Media3PlayerEngine @Inject constructor(
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        // Behind-live-window: just seek to the live edge — no retry counter needed
+                        if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
+                            Log.w(TAG, "Behind live window — seeking to live edge")
+                            exoPlayer?.let { p ->
+                                p.seekToDefaultPosition()
+                                p.prepare()
+                            }
+                            return
+                        }
                         if (retryCount < MAX_RETRIES && isRecoverableError(error)) {
                             retryCount++
                             Log.w(TAG, "Recoverable error (attempt $retryCount/$MAX_RETRIES), retrying...")
@@ -309,6 +334,12 @@ class Media3PlayerEngine @Inject constructor(
                         reason: Int
                     ) {
                         _currentPosition.value = newPosition.positionMs
+                    }
+
+                    override fun onMediaMetadataChanged(metadata: androidx.media3.common.MediaMetadata) {
+                        // ICY / HLS metadata: the stream itself reports a title change.
+                        val title = metadata.title?.toString()?.takeIf { it.isNotBlank() }
+                        _mediaTitle.value = title
                     }
 
                     override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
@@ -360,12 +391,22 @@ class Media3PlayerEngine @Inject constructor(
         val player = getOrCreatePlayer()
         _error.tryEmit(null)
         _playerStats.value = PlayerStats() // reset stats
+        _mediaTitle.value = null
 
-        val dataSourceFactory = createDataSourceFactory(streamInfo)
-        val streamType = streamInfo.streamType.takeIf { it != StreamType.UNKNOWN }
-            ?: StreamTypeDetector.detect(streamInfo.url)
-
-        val mediaSource = createMediaSource(streamInfo.url, streamType, dataSourceFactory, streamInfo.title)
+        // If we already preloaded this exact stream, use the cached source
+        val mediaSource = if (preloadedStreamInfo?.url == streamInfo.url && preloadedSource != null) {
+            preloadedSource!!.also {
+                preloadedSource = null
+                preloadedStreamInfo = null
+            }
+        } else {
+            preloadedSource = null
+            preloadedStreamInfo = null
+            val dataSourceFactory = createDataSourceFactory(streamInfo)
+            val streamType = streamInfo.streamType.takeIf { it != StreamType.UNKNOWN }
+                ?: StreamTypeDetector.detect(streamInfo.url)
+            createMediaSource(streamInfo.url, streamType, dataSourceFactory, streamInfo.title)
+        }
 
         player.setMediaSource(mediaSource)
         player.prepare()
@@ -412,6 +453,7 @@ class Media3PlayerEngine @Inject constructor(
         return when (streamType) {
             StreamType.HLS -> HlsMediaSource.Factory(dataSourceFactory)
                 .setAllowChunklessPreparation(true)
+                // Start from the live edge rather than 3 segments behind it
                 .createMediaSource(mediaItem)
 
             StreamType.DASH -> DashMediaSource.Factory(dataSourceFactory)
@@ -492,11 +534,48 @@ class Media3PlayerEngine @Inject constructor(
 
     override fun setVolume(volume: Float) {
         currentVolume = volume.coerceIn(0f, 1f)
+        _isMuted.value = false
         exoPlayer?.volume = if (isDucked) {
             (currentVolume * 0.2f).coerceAtLeast(0.05f)
         } else {
             currentVolume
         }
+    }
+
+    override fun toggleMute() {
+        if (_isMuted.value) {
+            _isMuted.value = false
+            exoPlayer?.volume = volumeBeforeMute
+        } else {
+            volumeBeforeMute = currentVolume.coerceAtLeast(0.1f)
+            _isMuted.value = true
+            exoPlayer?.volume = 0f
+        }
+    }
+
+    override fun setScrubbingMode(enabled: Boolean) {
+        val player = exoPlayer ?: return
+        if (enabled) {
+            player.setScrubbingModeEnabled(true)
+        } else {
+            player.setScrubbingModeEnabled(false)
+            player.setScrubbingModeParameters(ScrubbingModeParameters.DEFAULT)
+        }
+    }
+
+    override fun preload(streamInfo: StreamInfo?) {
+        if (streamInfo == null) {
+            preloadedSource = null
+            preloadedStreamInfo = null
+            return
+        }
+        // Don't preload the stream that's already playing
+        if (streamInfo.url == lastStreamInfo?.url) return
+        val dataSourceFactory = createDataSourceFactory(streamInfo)
+        val streamType = streamInfo.streamType.takeIf { it != StreamType.UNKNOWN }
+            ?: StreamTypeDetector.detect(streamInfo.url)
+        preloadedSource = createMediaSource(streamInfo.url, streamType, dataSourceFactory, streamInfo.title)
+        preloadedStreamInfo = streamInfo
     }
 
     override fun selectAudioTrack(trackId: String) {
@@ -566,6 +645,8 @@ class Media3PlayerEngine @Inject constructor(
         handler.removeCallbacksAndMessages(null)
         shouldResumeOnAudioFocusGain = false
         abandonAudioFocusIfHeld()
+        preloadedSource = null
+        preloadedStreamInfo = null
         mediaSession?.release()
         mediaSession = null
         exoPlayer?.release()
@@ -576,14 +657,15 @@ class Media3PlayerEngine @Inject constructor(
         scope = CoroutineScope(Dispatchers.Main + supervisorJob)
         _playbackState.value = PlaybackState.IDLE
         _isPlaying.value = false
+        _isMuted.value = false
+        _mediaTitle.value = null
     }
 
     private fun isRecoverableError(error: PlaybackException): Boolean {
         return when (error.errorCode) {
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-            PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-            PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> true
+            PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> true
             else -> false
         }
     }

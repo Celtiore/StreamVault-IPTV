@@ -26,6 +26,9 @@ interface PlayerEngine {
     val availableAudioTracks: StateFlow<List<PlayerTrack>>
     val availableSubtitleTracks: StateFlow<List<PlayerTrack>>
 
+    /** In-stream metadata title (ICY / HLS). Null when the stream sends nothing. */
+    val mediaTitle: StateFlow<String?>
+
     fun prepare(streamInfo: StreamInfo)
     fun play()
     fun pause()
@@ -38,6 +41,24 @@ interface PlayerEngine {
     fun selectAudioTrack(trackId: String)
     fun selectSubtitleTrack(trackId: String?) // null to disable subtitles
     fun release()
+
+    /** Toggle mute without losing the remembered volume level. */
+    fun toggleMute()
+    val isMuted: StateFlow<Boolean>
+
+    /**
+     * Enable scrubbing mode for rapid switching (channel zapping).
+     * While enabled, the player skips re-buffering and favours lowest-latency
+     * key-frame-only decoding so each channel appears on screen faster.
+     */
+    fun setScrubbingMode(enabled: Boolean)
+
+    /**
+     * Pre-warm the player with a stream that will likely be played next.
+     * Only the initial manifest/key-frames are fetched — no full buffering.
+     * Call with `null` to discard any preloaded data.
+     */
+    fun preload(streamInfo: StreamInfo?)
 
     fun createRenderView(context: Context, resizeMode: PlayerSurfaceResizeMode): View
     fun bindRenderView(renderView: View, resizeMode: PlayerSurfaceResizeMode)
