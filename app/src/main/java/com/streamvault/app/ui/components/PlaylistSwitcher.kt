@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -44,6 +45,8 @@ fun PlaylistSwitcher(
 ) {
     var showProviderList by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val dropdownWidth = if (screenWidth < 700.dp) 180.dp else 250.dp
 
     BackHandler(enabled = showProviderList) { showProviderList = false }
 
@@ -84,7 +87,7 @@ fun PlaylistSwitcher(
             Surface(
                 modifier = Modifier
                     .padding(top = 48.dp)
-                    .width(250.dp),
+                    .width(dropdownWidth),
                 shape = RoundedCornerShape(8.dp),
                 colors = SurfaceDefaults.colors(containerColor = SurfaceElevated)
             ) {

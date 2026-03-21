@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -771,6 +772,8 @@ private fun SavedHistoryRow(
     items: List<SavedHistoryUiModel>,
     onItemClick: (SavedHistoryUiModel) -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val cardWidth = if (screenWidth < 700.dp) 180.dp else 250.dp
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -800,7 +803,7 @@ private fun SavedHistoryRow(
                         focusedContentColor = OnSurface
                     ),
                     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-                    modifier = Modifier.width(250.dp)
+                    modifier = Modifier.width(cardWidth)
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -833,6 +836,8 @@ private fun SavedGroupManagementRow(
     onGroupClick: (SavedGroupManagementUiModel) -> Unit,
     onGroupLongClick: (SavedGroupManagementUiModel) -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val cardWidth = if (screenWidth < 700.dp) 180.dp else 240.dp
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -860,7 +865,7 @@ private fun SavedGroupManagementRow(
                         containerColor = Surface,
                         focusedContainerColor = SurfaceHighlight
                     ),
-                    modifier = Modifier.width(240.dp)
+                    modifier = Modifier.width(cardWidth)
                 ) {
                     Column(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1132,9 +1137,12 @@ private fun ReorderPanel(
 ) {
     if (section == null) return
 
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val panelWidth = if (screenWidth < 700.dp) 180.dp else 250.dp
+
     Column(
         modifier = Modifier
-            .width(250.dp)
+            .width(panelWidth)
             .heightIn(max = 300.dp)
             .background(
                 color = Surface.copy(alpha = 0.97f),

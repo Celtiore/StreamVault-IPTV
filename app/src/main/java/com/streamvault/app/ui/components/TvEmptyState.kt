@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,14 +29,15 @@ fun TvEmptyState(
     subtitle: String,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        val contentWidthFraction = if (maxWidth < 700.dp) 0.9f else 0.62f
         AppMessageState(
             title = title,
             subtitle = subtitle,
-            modifier = Modifier.fillMaxWidth(0.62f),
+            modifier = Modifier.fillMaxWidth(contentWidthFraction),
             containerBrush = Brush.horizontalGradient(
                 listOf(
                     Color.White.copy(alpha = 0.05f),

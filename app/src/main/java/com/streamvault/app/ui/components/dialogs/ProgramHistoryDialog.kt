@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +38,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -56,6 +58,7 @@ fun ProgramHistoryDialog(
 ) {
     val focusRequester = remember { FocusRequester() }
     var canInteract by remember { mutableStateOf(false) }
+    val isTelevisionDevice = rememberIsTelevisionDevice()
     val locale = Locale.getDefault()
     val zoneId = remember { ZoneId.systemDefault() }
     val timeFormat = remember(locale) { DateTimeFormatter.ofPattern("HH:mm", locale) }
@@ -68,15 +71,13 @@ fun ProgramHistoryDialog(
     }
 
     Dialog(onDismissRequest = { if (canInteract) onDismiss() }) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier
-                .width(450.dp)
-                .heightIn(max = 600.dp)
-                .padding(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(24.dp)) {
+        val dialogContent: @Composable (Modifier) -> Unit = { resolvedModifier ->
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = resolvedModifier
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -180,6 +181,37 @@ fun ProgramHistoryDialog(
                         }
                     }
                 }
+                }
+            }
+        }
+
+        if (isTelevisionDevice) {
+            dialogContent(
+                Modifier
+                    .width(450.dp)
+                    .heightIn(max = 600.dp)
+                    .padding(16.dp)
+            )
+        } else {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val dialogModifier = when {
+                    maxWidth < 700.dp -> Modifier
+                        .fillMaxWidth(0.9f)
+                        .heightIn(max = 600.dp)
+                        .padding(16.dp)
+                    maxWidth < 1280.dp -> Modifier
+                        .fillMaxWidth(0.58f)
+                        .heightIn(max = 650.dp)
+                        .padding(16.dp)
+                    else -> Modifier
+                        .width(450.dp)
+                        .heightIn(max = 600.dp)
+                        .padding(16.dp)
+                }
+                dialogContent(dialogModifier)
             }
         }
     }

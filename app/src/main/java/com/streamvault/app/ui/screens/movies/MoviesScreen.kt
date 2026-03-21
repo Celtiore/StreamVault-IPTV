@@ -34,7 +34,9 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import com.streamvault.app.ui.components.SearchInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.navigation.Routes
 import com.streamvault.app.ui.components.CategoryRow
 import com.streamvault.app.ui.components.ContinueWatchingRow
@@ -285,6 +287,19 @@ private fun MoviesVodContent(
     onLoadMore: () -> Unit,
     onDismissReorder: () -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val favoriteCardWidth = when {
+        screenWidth < 700.dp -> 136.dp
+        !isTelevisionDevice && screenWidth < 900.dp -> 148.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 152.dp
+        else -> 160.dp
+    }
+    val loadingSectionHeight = when {
+        screenWidth < 700.dp -> 220.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 260.dp
+        else -> 300.dp
+    }
     var showCategoryPicker by remember { mutableStateOf(false) }
     val favoriteMovies = uiState.moviesByCategory[uiState.favoriteCategoryName].orEmpty()
     val freshMovies = uiState.libraryLensRows[MovieLibraryLens.FRESH].orEmpty()
@@ -436,7 +451,7 @@ private fun MoviesVodContent(
                                     if (isLocked) onProtectedMovieClick(movie) else onMovieClick(movie)
                                 },
                                 onLongClick = { onShowDialog(movie) },
-                                modifier = Modifier.width(160.dp)
+                                modifier = Modifier.width(favoriteCardWidth)
                             )
                         }
                     }
@@ -637,7 +652,7 @@ private fun MoviesVodContent(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(300.dp),
+                            .height(loadingSectionHeight),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(

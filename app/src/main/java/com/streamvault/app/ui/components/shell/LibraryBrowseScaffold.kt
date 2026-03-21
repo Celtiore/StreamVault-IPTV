@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -61,22 +63,45 @@ fun LibraryBrowseScaffold(
         modifier = modifier,
         header = header
     ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .width(312.dp)
-                    .fillMaxHeight()
-            ) {
-                railContent()
-            }
-            Spacer(modifier = Modifier.width(spacing.lg))
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(spacing.lg)
-            ) {
-                content()
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isTelevisionDevice = rememberIsTelevisionDevice()
+            val useStackedLayout = !isTelevisionDevice && maxWidth < 900.dp
+            if (useStackedLayout) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(spacing.md)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        railContent()
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(spacing.lg)
+                    ) {
+                        content()
+                    }
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .width(312.dp)
+                            .fillMaxHeight()
+                    ) {
+                        railContent()
+                    }
+                    Spacer(modifier = Modifier.width(spacing.lg))
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.lg)
+                    ) {
+                        content()
+                    }
+                }
             }
         }
     }

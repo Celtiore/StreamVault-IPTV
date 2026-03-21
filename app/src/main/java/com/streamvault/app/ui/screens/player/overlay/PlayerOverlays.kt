@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -62,6 +63,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.components.ChannelLogoBadge
 import com.streamvault.app.ui.components.rememberCrossfadeImageModel
 import com.streamvault.app.ui.components.shell.StatusPill
@@ -648,20 +650,34 @@ fun ChannelListOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.18f))
     ) {
-        Box(
-            modifier = Modifier
-                .width(500.dp)
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .padding(20.dp)
-        ) {
-            PlayerOverlayPanel(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.foundation.lazy.LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isTelevisionDevice = rememberIsTelevisionDevice()
+            val panelModifier = if (maxWidth < 700.dp) {
+                Modifier
+                    .fillMaxWidth(0.9f)
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            } else if (!isTelevisionDevice && maxWidth < 1280.dp) {
+                Modifier
+                    .fillMaxWidth(0.5f)
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            } else {
+                Modifier
+                    .width(500.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            }
+
+            Box(modifier = panelModifier) {
+                PlayerOverlayPanel(modifier = Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     item {
                         Row(
                             modifier = Modifier
@@ -956,6 +972,7 @@ fun ChannelListOverlay(
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.85f)
                     )
+                    }
                 }
             }
         }
@@ -992,17 +1009,32 @@ fun EpgOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.18f))
     ) {
-        PlayerOverlayPanel(
+        BoxWithConstraints(
             modifier = Modifier
+                .fillMaxSize()
                 .align(Alignment.CenterEnd)
-                .width(520.dp)
-                .padding(24.dp)
         ) {
-            androidx.compose.foundation.lazy.LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+            val isTelevisionDevice = rememberIsTelevisionDevice()
+            val panelModifier = if (maxWidth < 700.dp) {
+                Modifier
+                    .fillMaxWidth(0.9f)
+                    .padding(24.dp)
+            } else if (!isTelevisionDevice && maxWidth < 1280.dp) {
+                Modifier
+                    .fillMaxWidth(0.54f)
+                    .padding(24.dp)
+            } else {
+                Modifier
+                    .width(520.dp)
+                    .padding(24.dp)
+            }
+
+            PlayerOverlayPanel(modifier = panelModifier) {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 item {
                     Text(
                         text = stringResource(R.string.epg_title),
@@ -1198,6 +1230,7 @@ fun EpgOverlay(
                         }
                     }
                 }
+                }
             }
         }
     }
@@ -1317,20 +1350,34 @@ fun CategoryListOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.18f))
     ) {
-        Box(
-            modifier = Modifier
-                .width(500.dp)
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .padding(20.dp)
-        ) {
-            PlayerOverlayPanel(modifier = Modifier.fillMaxSize()) {
-                androidx.compose.foundation.lazy.LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isTelevisionDevice = rememberIsTelevisionDevice()
+            val panelModifier = if (maxWidth < 700.dp) {
+                Modifier
+                    .fillMaxWidth(0.9f)
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            } else if (!isTelevisionDevice && maxWidth < 1280.dp) {
+                Modifier
+                    .fillMaxWidth(0.5f)
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            } else {
+                Modifier
+                    .width(500.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .padding(20.dp)
+            }
+
+            Box(modifier = panelModifier) {
+                PlayerOverlayPanel(modifier = Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                     item {
                         Text(
                             text = stringResource(R.string.label_categories),
@@ -1404,6 +1451,7 @@ fun CategoryListOverlay(
                                 }
                             }
                         }
+                    }
                     }
                 }
             }

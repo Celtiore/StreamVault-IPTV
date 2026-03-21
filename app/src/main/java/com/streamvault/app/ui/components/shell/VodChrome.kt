@@ -2,6 +2,7 @@ package com.streamvault.app.ui.components.shell
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
@@ -215,49 +217,58 @@ fun VodCategoryPickerDialog(
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.height(420.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(filteredCategories, key = { it.name }) { category ->
-                        Surface(
-                            onClick = {
-                                category.onClick()
-                                onDismiss()
-                            },
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
-                            colors = ClickableSurfaceDefaults.colors(
-                                containerColor = SurfaceElevated,
-                                focusedContainerColor = SurfaceHighlight
-                            ),
-                            border = ClickableSurfaceDefaults.border(
-                                focusedBorder = Border(
-                                    border = BorderStroke(2.dp, FocusBorder),
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                            ),
-                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1f)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val isTelevisionDevice = rememberIsTelevisionDevice()
+                    val listHeight = when {
+                        maxWidth < 700.dp -> 300.dp
+                        !isTelevisionDevice && maxWidth < 1280.dp -> 360.dp
+                        else -> 420.dp
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.height(listHeight),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredCategories, key = { it.name }) { category ->
+                            Surface(
+                                onClick = {
+                                    category.onClick()
+                                    onDismiss()
+                                },
+                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                                colors = ClickableSurfaceDefaults.colors(
+                                    containerColor = SurfaceElevated,
+                                    focusedContainerColor = SurfaceHighlight
+                                ),
+                                border = ClickableSurfaceDefaults.border(
+                                    focusedBorder = Border(
+                                        border = BorderStroke(2.dp, FocusBorder),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                ),
+                                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f)
                             ) {
-                                Text(
-                                    text = category.name,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = category.count.toString(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = OnSurfaceDim
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = category.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = category.count.toString(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = OnSurfaceDim
+                                    )
+                                }
                             }
                         }
                     }

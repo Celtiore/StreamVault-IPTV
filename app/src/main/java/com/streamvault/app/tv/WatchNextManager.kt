@@ -10,6 +10,7 @@ import android.provider.BaseColumns
 import android.util.Log
 import com.streamvault.app.MainActivity
 import com.streamvault.app.R
+import com.streamvault.app.device.isTelevisionDevice
 import com.streamvault.app.navigation.PlayerNavigationRequest
 import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.PlaybackHistory
@@ -26,6 +27,7 @@ class WatchNextManager @Inject constructor(
 ) {
 
     suspend fun refreshWatchNext() {
+        if (!context.isTelevisionDevice()) return
         val historyEntries = playbackHistoryRepository.getRecentlyWatched(limit = 40)
             .first()
             .asSequence()

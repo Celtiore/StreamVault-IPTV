@@ -3,6 +3,7 @@ package com.streamvault.app.ui.components.dialogs
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Brush
@@ -29,6 +31,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.design.AppColors
 import com.streamvault.app.ui.design.FocusSpec
 
@@ -43,52 +46,110 @@ fun PremiumDialog(
     footer: @Composable RowScope.() -> Unit = {}
 ) {
     var canInteract by remember { mutableStateOf(false) }
+    val isTelevisionDevice = rememberIsTelevisionDevice()
     LaunchedEffect(Unit) { delay(500); canInteract = true }
     Dialog(
         onDismissRequest = { if (canInteract) onDismissRequest() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            modifier = modifier.fillMaxWidth(widthFraction),
-            shape = RoundedCornerShape(28.dp),
-            colors = SurfaceDefaults.colors(containerColor = AppColors.SurfaceElevated)
-        ) {
-            Column(
-                modifier = Modifier
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                AppColors.BrandMuted.copy(alpha = 0.18f),
-                                AppColors.SurfaceElevated,
-                                AppColors.Surface
+        if (isTelevisionDevice) {
+            Surface(
+                modifier = modifier.fillMaxWidth(widthFraction),
+                shape = RoundedCornerShape(28.dp),
+                colors = SurfaceDefaults.colors(containerColor = AppColors.SurfaceElevated)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    AppColors.BrandMuted.copy(alpha = 0.18f),
+                                    AppColors.SurfaceElevated,
+                                    AppColors.Surface
+                                )
                             )
                         )
-                    )
-                    .padding(28.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = AppColors.TextPrimary
-                    )
-                    if (!subtitle.isNullOrBlank()) {
+                        .padding(28.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = AppColors.TextSecondary
+                            text = title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = AppColors.TextPrimary
+                        )
+                        if (!subtitle.isNullOrBlank()) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = AppColors.TextSecondary
+                            )
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, androidx.compose.ui.Alignment.End),
+                        content = footer
+                    )
+                }
+            }
+        } else {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val resolvedWidthFraction = when {
+                    maxWidth < 700.dp -> 0.9f
+                    maxWidth < 1000.dp -> maxOf(widthFraction, 0.62f)
+                    else -> widthFraction
+                }
+
+                Surface(
+                    modifier = modifier.fillMaxWidth(resolvedWidthFraction),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = SurfaceDefaults.colors(containerColor = AppColors.SurfaceElevated)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        AppColors.BrandMuted.copy(alpha = 0.18f),
+                                        AppColors.SurfaceElevated,
+                                        AppColors.Surface
+                                    )
+                                )
+                            )
+                            .padding(28.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = AppColors.TextPrimary
+                            )
+                            if (!subtitle.isNullOrBlank()) {
+                                Text(
+                                    text = subtitle,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = AppColors.TextSecondary
+                                )
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, androidx.compose.ui.Alignment.End),
+                            content = footer
                         )
                     }
                 }
-
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp, androidx.compose.ui.Alignment.End),
-                    content = footer
-                )
             }
         }
     }

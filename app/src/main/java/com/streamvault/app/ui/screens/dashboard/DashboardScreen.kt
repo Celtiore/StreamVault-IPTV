@@ -3,6 +3,7 @@ package com.streamvault.app.ui.screens.dashboard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -44,6 +46,7 @@ import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.components.ChannelLogoBadge
 import com.streamvault.app.navigation.Routes
 import com.streamvault.app.ui.components.CategoryRow
@@ -210,6 +213,13 @@ private fun DashboardHero(
     onOpenSavedLibrary: () -> Unit,
     onFeatureAction: () -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val heroHeight = when {
+        screenWidth < 700.dp -> 176.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 196.dp
+        else -> 220.dp
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -222,13 +232,13 @@ private fun DashboardHero(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
+                    .height(heroHeight)
                     .clip(RoundedCornerShape(28.dp))
             )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
+                    .height(heroHeight)
                     .clip(RoundedCornerShape(28.dp))
                     .background(
                         Brush.horizontalGradient(
@@ -248,7 +258,7 @@ private fun DashboardHero(
             subtitle = feature.summary.ifBlank { stringResource(R.string.dashboard_subtitle, providerName) },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
+                .height(heroHeight),
             footer = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -354,6 +364,13 @@ private fun DashboardShortcutCard(
     shortcut: DashboardLiveShortcut,
     onClick: () -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val cardWidth = when {
+        screenWidth < 700.dp -> 148.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 160.dp
+        else -> 170.dp
+    }
     val accentColor = when (shortcut.type) {
         DashboardShortcutType.FAVORITES -> Color(0xFFFFC857)
         DashboardShortcutType.RECENT -> Color(0xFF4FD1C5)
@@ -364,7 +381,7 @@ private fun DashboardShortcutCard(
     Surface(
         onClick = onClick,
         modifier = Modifier
-            .width(170.dp)
+            .width(cardWidth)
             .height(76.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(16.dp)),
         colors = ClickableSurfaceDefaults.colors(
@@ -606,10 +623,19 @@ private fun EmptyDashboard(
     onAddProvider: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
+        val isTelevisionDevice = rememberIsTelevisionDevice()
+        val contentModifier = if (maxWidth < 900.dp) {
+            Modifier.fillMaxWidth(0.9f)
+        } else if (!isTelevisionDevice && maxWidth < 1280.dp) {
+            Modifier.fillMaxWidth(0.76f)
+        } else {
+            Modifier.width(720.dp)
+        }
+
         Surface(
             shape = RoundedCornerShape(28.dp),
             colors = SurfaceDefaults.colors(
@@ -617,8 +643,7 @@ private fun EmptyDashboard(
             )
         ) {
             Column(
-                modifier = Modifier
-                    .width(720.dp)
+                modifier = contentModifier
                     .padding(horizontal = 32.dp, vertical = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalAlignment = Alignment.Start

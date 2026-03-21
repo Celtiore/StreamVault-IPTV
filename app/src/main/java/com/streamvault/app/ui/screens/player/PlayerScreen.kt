@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.focus.onFocusChanged
@@ -36,6 +37,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import androidx.tv.material3.*
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.theme.*
 import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.StreamInfo
@@ -109,6 +111,22 @@ fun PlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
     multiViewViewModel: MultiViewViewModel = hiltViewModel()
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val sideOverlayWidth = if (screenWidth < 700.dp) {
+        (screenWidth * 0.62f).coerceIn(220.dp, 300.dp)
+    } else if (!isTelevisionDevice && screenWidth < 1280.dp) {
+        (screenWidth * 0.4f).coerceIn(320.dp, 420.dp)
+    } else {
+        350.dp
+    }
+    val epgOverlayWidth = if (screenWidth < 700.dp) {
+        (screenWidth * 0.68f).coerceIn(240.dp, 320.dp)
+    } else if (!isTelevisionDevice && screenWidth < 1280.dp) {
+        (screenWidth * 0.46f).coerceIn(360.dp, 500.dp)
+    } else {
+        400.dp
+    }
     val mainActivity = LocalContext.current.findMainActivity()
     val isInPictureInPictureMode = mainActivity
         ?.pictureInPictureModeFlow
@@ -767,7 +785,7 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(if (isRtl) Alignment.TopEnd else Alignment.TopStart)
                     .fillMaxHeight()
-                    .width(350.dp)
+                    .width(sideOverlayWidth)
                     .focusGroup()
             ) {
                 ChannelListOverlay(
@@ -793,7 +811,7 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(if (isRtl) Alignment.TopEnd else Alignment.TopStart)
                     .fillMaxHeight()
-                    .width(350.dp)
+                    .width(sideOverlayWidth)
                     .focusGroup()
             ) {
                 CategoryListOverlay(
@@ -815,7 +833,7 @@ fun PlayerScreen(
                 modifier = Modifier
                     .align(if (isRtl) Alignment.TopStart else Alignment.TopEnd)
                     .fillMaxHeight()
-                    .width(400.dp)
+                    .width(epgOverlayWidth)
                     .focusGroup()
             ) {
                 EpgOverlay(

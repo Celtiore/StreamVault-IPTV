@@ -3,6 +3,7 @@ package com.streamvault.app.ui.screens.series
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,7 @@ import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.components.rememberCrossfadeImageModel
 import com.streamvault.app.ui.components.shell.ContentMetadataStrip
 import com.streamvault.app.ui.components.shell.EpisodeRowCard
@@ -105,17 +108,31 @@ private fun SeriesDetailContent(
     onEpisodeClick: (Episode) -> Unit,
     onBack: () -> Unit
 ) {
-    Box(
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Canvas)
     ) {
+        val compactLayout = !isTelevisionDevice && maxWidth < 900.dp
+        val heroHeight = when {
+            maxWidth < 700.dp -> 220.dp
+            !isTelevisionDevice && maxWidth < 900.dp -> 280.dp
+            else -> 420.dp
+        }
+        val contentPadding = if (compactLayout) {
+            PaddingValues(horizontal = 16.dp, vertical = 20.dp)
+        } else {
+            PaddingValues(horizontal = 56.dp, vertical = 36.dp)
+        }
+        val posterWidth = if (compactLayout) 132.dp else 220.dp
+
         AsyncImage(
             model = rememberCrossfadeImageModel(series.backdropUrl ?: series.posterUrl),
             contentDescription = series.name,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(420.dp)
+                .height(heroHeight)
                 .align(Alignment.TopCenter),
             contentScale = ContentScale.Crop
         )
@@ -123,7 +140,7 @@ private fun SeriesDetailContent(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(420.dp)
+                .height(heroHeight)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
@@ -137,7 +154,7 @@ private fun SeriesDetailContent(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 56.dp, vertical = 36.dp),
+            contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             item {
@@ -156,62 +173,120 @@ private fun SeriesDetailContent(
             }
 
             item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(220.dp)
-                            .aspectRatio(2f / 3f)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(AppColors.SurfaceElevated)
-                    ) {
-                        AsyncImage(
-                            model = rememberCrossfadeImageModel(series.posterUrl ?: series.backdropUrl),
-                            contentDescription = series.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatusPill(label = stringResource(R.string.nav_series), containerColor = AppColors.BrandMuted)
-                            series.rating.takeIf { it > 0f }?.let {
-                                StatusPill(label = "RTG ${String.format("%.1f", it)}", containerColor = AppColors.Warning, contentColor = Color.Black)
-                            }
-                            if (unwatchedEpisodeCount > 0) {
-                                StatusPill(
-                                    label = stringResource(R.string.series_unwatched_badge, unwatchedEpisodeCount),
-                                    containerColor = AppColors.SurfaceEmphasis
-                                )
-                            }
-                        }
-                        Text(
-                            text = series.name,
-                            style = MaterialTheme.typography.displayMedium,
-                            color = AppColors.TextPrimary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        ContentMetadataStrip(
-                            values = listOf(
-                                series.releaseDate.orEmpty(),
-                                series.genre.orEmpty(),
-                                selectedSeason?.name.orEmpty()
+                if (compactLayout) {
+                    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .width(posterWidth)
+                                .aspectRatio(2f / 3f)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(AppColors.SurfaceElevated)
+                        ) {
+                            AsyncImage(
+                                model = rememberCrossfadeImageModel(series.posterUrl ?: series.backdropUrl),
+                                contentDescription = series.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
-                        )
-                        Text(
-                            text = series.plot ?: stringResource(R.string.series_plot_fallback),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = AppColors.TextSecondary,
-                            maxLines = 5,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        }
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                StatusPill(label = stringResource(R.string.nav_series), containerColor = AppColors.BrandMuted)
+                                series.rating.takeIf { it > 0f }?.let {
+                                    StatusPill(label = "RTG ${String.format("%.1f", it)}", containerColor = AppColors.Warning, contentColor = Color.Black)
+                                }
+                                if (unwatchedEpisodeCount > 0) {
+                                    StatusPill(
+                                        label = stringResource(R.string.series_unwatched_badge, unwatchedEpisodeCount),
+                                        containerColor = AppColors.SurfaceEmphasis
+                                    )
+                                }
+                            }
+                            Text(
+                                text = series.name,
+                                style = MaterialTheme.typography.displayMedium,
+                                color = AppColors.TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            ContentMetadataStrip(
+                                values = listOf(
+                                    series.releaseDate.orEmpty(),
+                                    series.genre.orEmpty(),
+                                    selectedSeason?.name.orEmpty()
+                                )
+                            )
+                            Text(
+                                text = series.plot ?: stringResource(R.string.series_plot_fallback),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AppColors.TextSecondary,
+                                maxLines = 5,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(posterWidth)
+                                .aspectRatio(2f / 3f)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(AppColors.SurfaceElevated)
+                        ) {
+                            AsyncImage(
+                                model = rememberCrossfadeImageModel(series.posterUrl ?: series.backdropUrl),
+                                contentDescription = series.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(18.dp)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                StatusPill(label = stringResource(R.string.nav_series), containerColor = AppColors.BrandMuted)
+                                series.rating.takeIf { it > 0f }?.let {
+                                    StatusPill(label = "RTG ${String.format("%.1f", it)}", containerColor = AppColors.Warning, contentColor = Color.Black)
+                                }
+                                if (unwatchedEpisodeCount > 0) {
+                                    StatusPill(
+                                        label = stringResource(R.string.series_unwatched_badge, unwatchedEpisodeCount),
+                                        containerColor = AppColors.SurfaceEmphasis
+                                    )
+                                }
+                            }
+                            Text(
+                                text = series.name,
+                                style = MaterialTheme.typography.displayMedium,
+                                color = AppColors.TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            ContentMetadataStrip(
+                                values = listOf(
+                                    series.releaseDate.orEmpty(),
+                                    series.genre.orEmpty(),
+                                    selectedSeason?.name.orEmpty()
+                                )
+                            )
+                            Text(
+                                text = series.plot ?: stringResource(R.string.series_plot_fallback),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = AppColors.TextSecondary,
+                                maxLines = 5,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }

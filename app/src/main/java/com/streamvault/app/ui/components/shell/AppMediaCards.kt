@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -302,6 +303,8 @@ fun SeriesPosterCard(series: Series, modifier: Modifier = Modifier) {
 
 @Composable
 fun EpisodeRowCard(episode: Episode, modifier: Modifier = Modifier) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val previewWidth = if (screenWidth < 700.dp) 124.dp else 164.dp
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -312,7 +315,7 @@ fun EpisodeRowCard(episode: Episode, modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .width(164.dp)
+                    .width(previewWidth)
                     .aspectRatio(16f / 9f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(AppColors.SurfaceEmphasis),

@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -61,6 +62,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.components.rememberCrossfadeImageModel
 import com.streamvault.app.ui.screens.player.NumericChannelInputState
 import com.streamvault.app.ui.screens.player.SeekPreviewState
@@ -356,16 +358,33 @@ private fun PlayerTopBar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val topBarHeight = when {
+        screenWidth < 700.dp -> 100.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 116.dp
+        else -> 132.dp
+    }
+    val horizontalPadding = when {
+        screenWidth < 700.dp -> 18.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 24.dp
+        else -> 32.dp
+    }
+    val verticalPadding = when {
+        screenWidth < 700.dp -> 16.dp
+        !isTelevisionDevice && screenWidth < 1280.dp -> 20.dp
+        else -> 24.dp
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(132.dp)
+            .height(topBarHeight)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(Color.Black.copy(alpha = 0.8f), Color.Transparent)
                 )
             )
-            .padding(horizontal = 32.dp, vertical = 24.dp)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -774,6 +793,41 @@ private fun PlayerVodInfo(
     seekPreview: SeekPreviewState,
     onSeekPreviewPositionChanged: (Long?) -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val compactControls = screenWidth < 700.dp
+    val tabletControls = !isTelevisionDevice && screenWidth >= 700.dp && screenWidth < 1280.dp
+    val transportButtonSize = when {
+        compactControls -> 48.dp
+        tabletControls -> 52.dp
+        else -> 56.dp
+    }
+    val playButtonSize = when {
+        compactControls -> 60.dp
+        tabletControls -> 66.dp
+        else -> 72.dp
+    }
+    val playIconSize = when {
+        compactControls -> 28.dp
+        tabletControls -> 30.dp
+        else -> 34.dp
+    }
+    val seekPreviewWidth = when {
+        compactControls -> 180.dp
+        tabletControls -> 200.dp
+        else -> 220.dp
+    }
+    val outerSpacing = when {
+        compactControls -> 12.dp
+        tabletControls -> 14.dp
+        else -> 18.dp
+    }
+    val transportGroupHorizontalPadding = when {
+        compactControls -> 8.dp
+        tabletControls -> 9.dp
+        else -> 10.dp
+    }
+
     val playbackLabel = stringResource(R.string.player_playback_label)
     val actions = buildList {
         add(
@@ -818,7 +872,13 @@ private fun PlayerVodInfo(
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(
+            when {
+                compactControls -> 10.dp
+                tabletControls -> 12.dp
+                else -> 14.dp
+            }
+        )
     ) {
         PlayerMetaPill(
             text = if (contentType == "MOVIE") {
@@ -849,7 +909,7 @@ private fun PlayerVodInfo(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(outerSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -857,14 +917,21 @@ private fun PlayerVodInfo(
                 colors = SurfaceDefaults.colors(containerColor = Color.Black.copy(alpha = 0.24f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = transportGroupHorizontalPadding, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(
+                        when {
+                            compactControls -> 8.dp
+                            tabletControls -> 9.dp
+                            else -> 10.dp
+                        }
+                    ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PlayerTransportButton(
                         label = "\u23EA",
                         contentDescription = stringResource(R.string.player_rewind),
                         onClick = onSeekBackward,
+                        buttonSize = transportButtonSize,
                         modifier = Modifier.focusProperties {
                             down = quickActionsFocusRequester
                         }
@@ -877,7 +944,7 @@ private fun PlayerVodInfo(
                             focusedContainerColor = Primary
                         ),
                         modifier = Modifier
-                            .size(72.dp)
+                            .size(playButtonSize)
                             .focusRequester(playButtonFocusRequester)
                             .focusProperties {
                                 down = quickActionsFocusRequester
@@ -896,7 +963,7 @@ private fun PlayerVodInfo(
                                     imageVector = Icons.Default.PlayArrow,
                                     contentDescription = stringResource(R.string.player_play),
                                     tint = Color.White,
-                                    modifier = Modifier.size(34.dp)
+                                    modifier = Modifier.size(playIconSize)
                                 )
                             }
                         }
@@ -905,6 +972,7 @@ private fun PlayerVodInfo(
                         label = "\u23E9",
                         contentDescription = stringResource(R.string.player_forward),
                         onClick = onSeekForward,
+                        buttonSize = transportButtonSize,
                         modifier = Modifier.focusProperties {
                             down = quickActionsFocusRequester
                         }
@@ -919,7 +987,12 @@ private fun PlayerVodInfo(
                 AnimatedVisibility(visible = seekPreview.visible) {
                     PlayerSeekPreviewCard(
                         preview = seekPreview,
-                        modifier = Modifier.width(220.dp)
+                        previewHeight = when {
+                            compactControls -> 96.dp
+                            tabletControls -> 106.dp
+                            else -> 118.dp
+                        },
+                        modifier = Modifier.width(seekPreviewWidth)
                     )
                 }
 
@@ -1011,6 +1084,7 @@ private fun PlayerVodInfo(
 @Composable
 private fun PlayerSeekPreviewCard(
     preview: SeekPreviewState,
+    previewHeight: androidx.compose.ui.unit.Dp = 118.dp,
     modifier: Modifier = Modifier
 ) {
     val artworkModel = rememberCrossfadeImageModel(preview.artworkUrl)
@@ -1024,7 +1098,7 @@ private fun PlayerSeekPreviewCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(118.dp)
+                    .height(previewHeight)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color.Black.copy(alpha = 0.38f)),
                 contentAlignment = Alignment.Center
@@ -1122,6 +1196,7 @@ private fun PlayerTransportButton(
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
+    buttonSize: androidx.compose.ui.unit.Dp = 56.dp,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -1132,7 +1207,7 @@ private fun PlayerTransportButton(
             focusedContainerColor = Color.White.copy(alpha = 0.3f)
         ),
         modifier = modifier
-            .size(56.dp)
+            .size(buttonSize)
             .semantics { this.contentDescription = contentDescription }
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {

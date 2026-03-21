@@ -16,6 +16,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -54,6 +55,9 @@ fun SavedCategoryShortcutsRow(
     onShortcutClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val shortcutWidth = if (screenWidth < 700.dp) 156.dp else 192.dp
+
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -112,7 +116,7 @@ fun SavedCategoryShortcutsRow(
                 item(key = "primary_shortcut") {
                     Surface(
                         onClick = onPrimaryShortcutClick,
-                        modifier = Modifier.width(192.dp),
+                        modifier = Modifier.width(shortcutWidth),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
                         colors = ClickableSurfaceDefaults.colors(
                             containerColor = if (isPrimaryShortcutSelected) {
@@ -160,7 +164,7 @@ fun SavedCategoryShortcutsRow(
                     onLongClick = onShortcutLongClick?.let { handler ->
                         { handler(shortcut.name) }
                     },
-                    modifier = Modifier.width(192.dp),
+                    modifier = Modifier.width(shortcutWidth),
                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
                     colors = ClickableSurfaceDefaults.colors(
                         containerColor = if (isSelected) Primary.copy(alpha = 0.18f) else SurfaceElevated,

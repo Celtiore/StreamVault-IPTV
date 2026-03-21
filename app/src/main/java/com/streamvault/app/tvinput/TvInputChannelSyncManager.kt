@@ -10,6 +10,7 @@ import android.media.tv.TvContract
 import android.provider.BaseColumns
 import android.util.Log
 import com.streamvault.app.MainActivity
+import com.streamvault.app.device.isTelevisionDevice
 import com.streamvault.app.navigation.PlayerNavigationRequest
 import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.Program
@@ -39,6 +40,9 @@ class TvInputChannelSyncManager @Inject constructor(
 
     suspend fun refreshTvInputCatalogResult(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            if (!context.isTelevisionDevice()) {
+                return@runCatching
+            }
             val provider = providerRepository.getActiveProvider().first()
             if (provider == null) {
                 deleteManagedChannels()

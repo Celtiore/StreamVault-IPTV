@@ -29,6 +29,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.shape.CircleShape
 import kotlinx.coroutines.delay
 import androidx.tv.material3.*
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import android.view.KeyEvent as AndroidKeyEvent
 
 @Composable
@@ -47,6 +48,7 @@ fun AddToGroupDialog(
     onOpenSplitScreenPlanner: (() -> Unit)? = null
 ) {
     var showCreateGroup by remember { mutableStateOf(false) }
+    val isTelevisionDevice = rememberIsTelevisionDevice()
     val contentFocusRequester = remember { FocusRequester() }  // focuses first interactive item, not close button
 
     // Ghost-click debounce
@@ -91,38 +93,44 @@ fun AddToGroupDialog(
             onDismissRequest = safeDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                colors = SurfaceDefaults.colors(containerColor = AppColors.SurfaceElevated),
-                modifier = Modifier
-                    .width(400.dp)
-                    .padding(16.dp)
-                    .onPreviewKeyEvent(blockOpenGesture)
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.add_group_manage_title, contentTitle),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = AppColors.TextPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = safeDismiss
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.add_group_close_cd))
-                        }
-                    }
+            val dialogModifier = if (isTelevisionDevice) {
+                Modifier.width(400.dp)
+            } else {
+                Modifier
+            }
 
-                    LazyColumn(
-                        modifier = Modifier.weight(1f, fill = false),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+            val dialogContent: @Composable (Modifier) -> Unit = { resolvedModifier ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = SurfaceDefaults.colors(containerColor = AppColors.SurfaceElevated),
+                    modifier = resolvedModifier
+                        .padding(16.dp)
+                        .onPreviewKeyEvent(blockOpenGesture)
+                ) {
+                    Column(modifier = Modifier.padding(24.dp)) {
+                        // Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.add_group_manage_title, contentTitle),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = AppColors.TextPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = safeDismiss
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.add_group_close_cd))
+                            }
+                        }
+
+                        LazyColumn(
+                            modifier = Modifier.weight(1f, fill = false),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                         // ── Favorites ────────────────────────────────
                         item {
                             var isFocused by remember { mutableStateOf(false) }
@@ -298,7 +306,24 @@ fun AddToGroupDialog(
                             Text(stringResource(R.string.add_group_create_new_btn))
                         }
                     }
+                        }
                     }
+                }
+            }
+
+            if (isTelevisionDevice) {
+                dialogContent(dialogModifier)
+            } else {
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val responsiveModifier = when {
+                        maxWidth < 700.dp -> Modifier.fillMaxWidth(0.92f)
+                        maxWidth < 1280.dp -> Modifier.fillMaxWidth(0.58f)
+                        else -> Modifier.width(400.dp)
+                    }
+                    dialogContent(responsiveModifier)
                 }
             }
         }

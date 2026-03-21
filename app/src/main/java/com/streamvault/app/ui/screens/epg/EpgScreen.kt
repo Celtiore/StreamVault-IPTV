@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.SurfaceDefaults
 import androidx.tv.material3.Text
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.navigation.Routes
 import com.streamvault.app.ui.components.SearchInput
 import com.streamvault.app.ui.components.SelectionChip
@@ -283,21 +285,35 @@ fun FullEpgScreen(
                 .clickable(onClick = { selectedProgram = null }, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }),
             contentAlignment = Alignment.CenterEnd
         ) {
-            Surface(
-                modifier = Modifier
-                    .width(520.dp)
-                    .fillMaxHeight()
-                    .padding(vertical = 24.dp, horizontal = 24.dp),
-                colors = SurfaceDefaults.colors(containerColor = SurfaceElevated),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp)
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val isTelevisionDevice = rememberIsTelevisionDevice()
+                val panelModifier = when {
+                    maxWidth < 700.dp -> Modifier
+                        .fillMaxWidth(0.9f)
+                        .fillMaxHeight()
+                        .padding(vertical = 24.dp, horizontal = 24.dp)
+                    !isTelevisionDevice && maxWidth < 1280.dp -> Modifier
+                        .fillMaxWidth(0.54f)
+                        .fillMaxHeight()
+                        .padding(vertical = 24.dp, horizontal = 24.dp)
+                    else -> Modifier
+                        .width(520.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 24.dp, horizontal = 24.dp)
+                }
+
+                Surface(
+                    modifier = panelModifier,
+                    colors = SurfaceDefaults.colors(containerColor = SurfaceElevated),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             text = program.title,
@@ -463,6 +479,7 @@ fun FullEpgScreen(
                         TextButton(onClick = { selectedProgram = null }) {
                             Text(stringResource(R.string.settings_cancel))
                         }
+                    }
                     }
                 }
             }

@@ -934,50 +934,68 @@ private fun PremiumSelectionDialog(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isTelevisionDevice = com.streamvault.app.device.rememberIsTelevisionDevice()
     Dialog(onDismissRequest = onDismiss) {
-        androidx.compose.material3.Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = SurfaceElevated,
-            modifier = Modifier
-                .fillMaxWidth(0.62f)
-                .border(1.dp, Primary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-        ) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        val dialogContent: @Composable (Modifier) -> Unit = { resolvedModifier ->
+            androidx.compose.material3.Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = SurfaceElevated,
+                modifier = resolvedModifier
+                    .border(1.dp, Primary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Primary
-                )
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    content()
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Surface(
-                        onClick = onDismiss,
-                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
-                        colors = ClickableSurfaceDefaults.colors(
-                            containerColor = Primary.copy(alpha = 0.2f),
-                            focusedContainerColor = Primary.copy(alpha = 0.4f)
-                        )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Primary
+                    )
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 6.dp)
                     ) {
-                        Text(
-                            text = stringResource(R.string.settings_cancel),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Primary,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
-                        )
+                        content()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Surface(
+                            onClick = onDismiss,
+                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
+                            colors = ClickableSurfaceDefaults.colors(
+                                containerColor = Primary.copy(alpha = 0.2f),
+                                focusedContainerColor = Primary.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.settings_cancel),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Primary,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                            )
+                        }
                     }
                 }
+            }
+        }
+
+        if (isTelevisionDevice) {
+            dialogContent(Modifier.fillMaxWidth(0.62f))
+        } else {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val dialogWidthFraction = when {
+                    maxWidth < 700.dp -> 0.92f
+                    maxWidth < 1000.dp -> 0.78f
+                    else -> 0.62f
+                }
+                dialogContent(Modifier.fillMaxWidth(dialogWidthFraction))
             }
         }
     }

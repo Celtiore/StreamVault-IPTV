@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -41,6 +43,7 @@ import androidx.tv.material3.Text
 import com.streamvault.app.ui.design.requestFocusSafely
 import com.streamvault.app.ui.design.FocusSpec
 import com.streamvault.app.R
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import com.streamvault.app.ui.theme.FocusBorder
 import com.streamvault.app.ui.theme.OnSurface
 import com.streamvault.app.ui.theme.OnSurfaceDim
@@ -58,6 +61,7 @@ fun RenameGroupDialog(
     var canInteract by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val isTelevisionDevice = rememberIsTelevisionDevice()
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocusSafely(tag = "RenameGroupDialog", target = "Rename group field")
@@ -75,24 +79,25 @@ fun RenameGroupDialog(
         },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.42f),
-            shape = RoundedCornerShape(24.dp),
-            colors = SurfaceDefaults.colors(containerColor = SurfaceElevated)
-        ) {
-            Column(
-                modifier = Modifier
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Primary.copy(alpha = 0.08f),
-                                Color.Transparent
+        val dialogContent: @Composable (Modifier) -> Unit = { resolvedModifier ->
+            Surface(
+                modifier = resolvedModifier,
+                shape = RoundedCornerShape(24.dp),
+                colors = SurfaceDefaults.colors(containerColor = SurfaceElevated)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Primary.copy(alpha = 0.08f),
+                                    Color.Transparent
+                                )
                             )
                         )
-                    )
-                    .padding(28.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
+                        .padding(28.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 Text(
                     text = stringResource(R.string.category_options_rename),
                     style = MaterialTheme.typography.headlineMedium,
@@ -187,6 +192,23 @@ fun RenameGroupDialog(
                         Text(stringResource(R.string.add_group_rename))
                     }
                 }
+                }
+            }
+        }
+
+        if (isTelevisionDevice) {
+            dialogContent(Modifier.fillMaxWidth(0.42f))
+        } else {
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                val dialogModifier = when {
+                    maxWidth < 700.dp -> Modifier.fillMaxWidth(0.9f)
+                    maxWidth < 1280.dp -> Modifier.fillMaxWidth(0.58f)
+                    else -> Modifier.fillMaxWidth(0.42f)
+                }
+                dialogContent(dialogModifier)
             }
         }
     }

@@ -32,6 +32,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +61,12 @@ fun ParentalControlGroupScreen(
     viewModel: ParentalControlGroupViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val searchWidth = if (screenWidth < 700.dp) {
+        (screenWidth * 0.58f).coerceIn(180.dp, 260.dp)
+    } else {
+        420.dp
+    }
     val backButtonFocusRequester = remember { FocusRequester() }
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -97,7 +104,7 @@ fun ParentalControlGroupScreen(
                     placeholder = stringResource(R.string.parental_group_search),
                     onSearch = { focusManager.clearFocus() },
                     focusRequester = searchFocusRequester,
-                    modifier = Modifier.width(420.dp)
+                    modifier = Modifier.width(searchWidth)
                 )
             }
         }

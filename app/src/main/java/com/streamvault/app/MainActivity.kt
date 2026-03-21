@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import com.streamvault.app.cast.CastManager
 import com.streamvault.app.cast.CastRouteChooserActivity
+import com.streamvault.app.device.isTelevisionDevice
 import com.streamvault.app.navigation.AppNavigation
 import com.streamvault.app.navigation.ExternalNavigationRequest
 import com.streamvault.app.navigation.PlayerNavigationRequest
@@ -95,10 +96,12 @@ class MainActivity : ComponentActivity() {
         _pictureInPictureModeFlow.value = isInPictureInPictureMode
         handleExternalIntent(intent)
         castManager.ensureInitialized()
-        lifecycleScope.launch {
-            watchNextManager.refreshWatchNext()
-            launcherRecommendationsManager.refreshRecommendations()
-            tvInputChannelSyncManager.refreshTvInputCatalog()
+        if (isTelevisionDevice()) {
+            lifecycleScope.launch {
+                watchNextManager.refreshWatchNext()
+                launcherRecommendationsManager.refreshRecommendations()
+                tvInputChannelSyncManager.refreshTvInputCatalog()
+            }
         }
         setContent {
             val appLanguage by preferencesRepository.appLanguage.collectAsState(initial = "system")

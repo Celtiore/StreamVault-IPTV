@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -32,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import androidx.compose.ui.platform.LocalContext
 import com.streamvault.data.util.ProviderInputSanitizer
 import kotlinx.coroutines.Dispatchers
@@ -184,7 +186,7 @@ fun ProviderSetupScreen(
     // var selectedTab by remember { mutableStateOf(0) } - moved below to use state driven init? No, we need local state for editing.
     // We already have the vars defined above. 
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -193,16 +195,23 @@ fun ProviderSetupScreen(
                 )
             )
     ) {
-        Row(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top
-        ) {
+        val isTelevisionDevice = rememberIsTelevisionDevice()
+        val stackedLayout = !isTelevisionDevice && maxWidth < 900.dp
+        val tabletLayout = !isTelevisionDevice && maxWidth >= 900.dp && maxWidth < 1280.dp
+        val horizontalPadding = when {
+            stackedLayout -> 16.dp
+            tabletLayout -> 20.dp
+            else -> 28.dp
+        }
+        val formSpacing = when {
+            stackedLayout -> 12.dp
+            tabletLayout -> 12.dp
+            else -> 14.dp
+        }
+
+        val infoPanel: @Composable (Modifier) -> Unit = { modifier ->
             Surface(
-                modifier = Modifier.width(240.dp),
+                modifier = modifier,
                 shape = RoundedCornerShape(22.dp),
                 colors = SurfaceDefaults.colors(containerColor = Surface.copy(alpha = 0.92f))
             ) {
@@ -212,20 +221,13 @@ fun ProviderSetupScreen(
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = if (uiState.isEditing) {
+                    AppSectionHeader(
+                        title = if (uiState.isEditing) {
                             stringResource(R.string.setup_edit_provider)
                         } else {
                             stringResource(R.string.setup_provider_title)
                         },
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary
-                    )
-
-                    Text(
-                        text = stringResource(R.string.setup_shell_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = OnSurfaceDim
+                        subtitle = stringResource(R.string.setup_shell_subtitle)
                     )
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,9 +255,11 @@ fun ProviderSetupScreen(
                     )
                 }
             }
+        }
 
+        val formPanel: @Composable (Modifier) -> Unit = { modifier ->
             Surface(
-                modifier = Modifier.weight(1f),
+                modifier = modifier,
                 shape = RoundedCornerShape(22.dp),
                 border = Border(
                     border = BorderStroke(1.dp, SurfaceHighlight),
@@ -371,11 +375,11 @@ fun ProviderSetupScreen(
                                     onClick = { viewModel.updateM3uTab(0) },
                                     onFocused = { viewModel.updateM3uTab(0) },
                                     focusRequester = m3uUrlTabFocusRequester,
-                                    onMoveUp = { 
+                                    onMoveUp = {
                                         providerNameFocusRequester.requestFocus()
                                         true
                                     },
-                                    onMoveDown = { 
+                                    onMoveDown = {
                                         m3uValueFocusRequester.requestFocus()
                                         true
                                     }
@@ -386,11 +390,11 @@ fun ProviderSetupScreen(
                                     onClick = { viewModel.updateM3uTab(1) },
                                     onFocused = { viewModel.updateM3uTab(1) },
                                     focusRequester = m3uFileTabFocusRequester,
-                                    onMoveUp = { 
+                                    onMoveUp = {
                                         providerNameFocusRequester.requestFocus()
                                         true
                                     },
-                                    onMoveDown = { 
+                                    onMoveDown = {
                                         m3uValueFocusRequester.requestFocus()
                                         true
                                     }
@@ -403,11 +407,11 @@ fun ProviderSetupScreen(
                                     onValueChange = { m3uUrl = ProviderInputSanitizer.sanitizeUrlForEditing(it) },
                                     label = stringResource(R.string.setup_m3u_hint),
                                     focusRequester = m3uValueFocusRequester,
-                                    onMoveUp = { 
+                                    onMoveUp = {
                                         m3uUrlTabFocusRequester.requestFocus()
                                         true
                                     },
-                                    onMoveDown = { 
+                                    onMoveDown = {
                                         m3uSubmitFocusRequester.requestFocus()
                                         true
                                     }
@@ -424,11 +428,11 @@ fun ProviderSetupScreen(
                                     emptySelectionHint = stringResource(R.string.setup_file_browse_hint),
                                     onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
                                     focusRequester = m3uValueFocusRequester,
-                                    onMoveUp = { 
+                                    onMoveUp = {
                                         m3uFileTabFocusRequester.requestFocus()
                                         true
                                     },
-                                    onMoveDown = { 
+                                    onMoveDown = {
                                         m3uSubmitFocusRequester.requestFocus()
                                         true
                                     }
@@ -454,7 +458,7 @@ fun ProviderSetupScreen(
                                 enabled = !uiState.isLoading,
                                 onClick = { viewModel.addM3u(m3uUrl, name) },
                                 focusRequester = m3uSubmitFocusRequester,
-                                onMoveUp = { 
+                                onMoveUp = {
                                     m3uValueFocusRequester.requestFocus()
                                     true
                                 }
@@ -477,6 +481,33 @@ fun ProviderSetupScreen(
                             color = ErrorColor
                         )
                     }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = horizontalPadding, vertical = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (stackedLayout) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(formSpacing),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    infoPanel(Modifier.fillMaxWidth())
+                    formPanel(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(formSpacing),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    infoPanel(Modifier.width(if (tabletLayout) 220.dp else 240.dp))
+                    formPanel(Modifier.weight(1f))
                 }
             }
         }

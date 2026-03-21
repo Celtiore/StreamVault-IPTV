@@ -20,6 +20,7 @@ import com.streamvault.app.ui.components.SearchInput
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.input.key.*
@@ -37,6 +38,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
+import com.streamvault.app.device.rememberIsTelevisionDevice
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import com.streamvault.app.ui.components.CategoryRow
@@ -122,6 +124,26 @@ fun HomeScreen(
     val isReorderMode = uiState.isChannelReorderMode
     val isProMode = uiState.liveTvChannelMode == LiveTvChannelMode.PRO
     val isDenseMode = uiState.liveTvChannelMode != LiveTvChannelMode.COMFORTABLE
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val sidebarWidth = if (screenWidth < 900.dp) {
+        (screenWidth * 0.36f).coerceIn(188.dp, 220.dp)
+    } else if (!isTelevisionDevice && screenWidth < 1280.dp) {
+        (screenWidth * 0.28f).coerceIn(220.dp, 252.dp)
+    } else {
+        272.dp
+    }
+    val channelSearchWidth = if (screenWidth < 900.dp) {
+        (screenWidth * 0.34f).coerceIn(170.dp, 220.dp)
+    } else if (!isTelevisionDevice && screenWidth < 1280.dp) {
+        (screenWidth * 0.28f).coerceIn(220.dp, 280.dp)
+    } else if (isProMode) {
+        270.dp
+    } else if (isDenseMode) {
+        300.dp
+    } else {
+        340.dp
+    }
     val channelRowHeight = when (uiState.liveTvChannelMode) {
         LiveTvChannelMode.COMFORTABLE -> 92.dp
         LiveTvChannelMode.COMPACT -> 54.dp
@@ -296,7 +318,7 @@ fun HomeScreen(
                 Row(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
-                            .width(272.dp)
+                            .width(sidebarWidth)
                             .fillMaxHeight()
                             .background(SurfaceElevated)
                             .padding(horizontal = 16.dp, vertical = 24.dp)
@@ -477,7 +499,7 @@ fun HomeScreen(
                     
                     Column(
                         modifier = Modifier
-                            .width(272.dp)
+                            .width(sidebarWidth)
                             .fillMaxHeight()
                             .background(SurfaceElevated.copy(alpha = 0.88f), RoundedCornerShape(20.dp))
                             .padding(top = 10.dp)
@@ -682,7 +704,7 @@ fun HomeScreen(
                                     placeholder = stringResource(R.string.home_search_channels),
                                     onSearch = { focusManager.clearFocus() },
                                     focusRequester = channelSearchFocusRequester,
-                                    modifier = Modifier.width(if (isProMode) 270.dp else if (isDenseMode) 300.dp else 340.dp),
+                                    modifier = Modifier.width(channelSearchWidth),
                                     enabled = !isReorderMode
                                 )
                                 if (hasSplitChannels) {
@@ -1284,6 +1306,15 @@ fun ReorderSidePanel(
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val isTelevisionDevice = rememberIsTelevisionDevice()
+    val panelWidth = if (screenWidth < 900.dp) {
+        (screenWidth * 0.36f).coerceIn(188.dp, 220.dp)
+    } else if (!isTelevisionDevice && screenWidth < 1280.dp) {
+        (screenWidth * 0.28f).coerceIn(220.dp, 252.dp)
+    } else {
+        272.dp
+    }
     var draggingChannel by remember { mutableStateOf<Channel?>(null) }
     
     // Focus requester to trap focus inside the panel
@@ -1296,7 +1327,7 @@ fun ReorderSidePanel(
     Box(
         modifier = Modifier
             .fillMaxHeight()
-            .width(272.dp)
+            .width(panelWidth)
             .background(SurfaceElevated)
             .padding(16.dp)
             .focusRequester(panelFocusRequester)
