@@ -5,12 +5,19 @@ import com.streamvault.data.local.dao.CategoryDao
 import com.streamvault.data.local.dao.FavoriteDao
 import com.streamvault.data.local.dao.MovieDao
 import com.streamvault.data.local.dao.PlaybackHistoryDao
+import com.streamvault.data.local.dao.ProviderDao
 import com.streamvault.data.local.entity.FavoriteEntity
 import com.streamvault.data.local.entity.MovieEntity
 import com.streamvault.data.local.entity.PlaybackHistoryEntity
+import com.streamvault.data.local.entity.ProviderEntity
 import com.streamvault.data.preferences.PreferencesRepository
+import com.streamvault.data.remote.dto.XtreamCategory
+import com.streamvault.data.remote.dto.XtreamStream
+import com.streamvault.data.remote.xtream.XtreamApiService
 import com.streamvault.data.remote.xtream.XtreamStreamUrlResolver
 import com.streamvault.domain.model.ContentType
+import com.streamvault.domain.model.ProviderStatus
+import com.streamvault.domain.model.ProviderType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -18,12 +25,15 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 class MovieRepositoryImplTest {
 
     private val movieDao: MovieDao = mock()
     private val categoryDao: CategoryDao = mock()
+    private val providerDao: ProviderDao = mock()
+    private val xtreamApiService: XtreamApiService = mock()
     private val preferencesRepository: PreferencesRepository = mock()
     private val favoriteDao: FavoriteDao = mock()
     private val playbackHistoryDao: PlaybackHistoryDao = mock()
@@ -117,9 +127,49 @@ class MovieRepositoryImplTest {
         assertThat(result.map { it.name }).containsExactly("Galaxy Pursuit", "Harbor Escape").inOrder()
     }
 
+    @Test
+    fun `getMoviesByCategory lazily hydrates xtream category when local cache is empty`() = runTest {
+        whenever(preferencesRepository.parentalControlLevel).thenReturn(flowOf(0))
+        whenever(movieDao.getCountByCategory(7L, 42L)).thenReturn(flowOf(0))
+        whenever(movieDao.getByCategory(7L, 42L)).thenReturn(flowOf(emptyList()))
+        whenever(providerDao.getById(7L)).thenReturn(
+            ProviderEntity(
+                id = 7L,
+                name = "Xtream",
+                type = ProviderType.XTREAM_CODES,
+                serverUrl = "http://example.com",
+                username = "user",
+                password = "pass",
+                status = ProviderStatus.ACTIVE
+            )
+        )
+        whenever(xtreamApiService.getVodCategories(any())).thenReturn(
+            listOf(XtreamCategory(categoryId = "42", categoryName = "Action"))
+        )
+        whenever(xtreamApiService.getVodStreams(any())).thenReturn(
+            listOf(
+                XtreamStream(
+                    streamId = 101L,
+                    name = "Movie",
+                    categoryId = "42",
+                    streamIcon = null,
+                    containerExtension = "mp4"
+                )
+            )
+        )
+
+        val repository = createRepository()
+
+        repository.getMoviesByCategory(7L, 42L).first()
+
+        verify(movieDao).replaceCategory(eq(7L), eq(42L), any())
+    }
+
     private fun createRepository() = MovieRepositoryImpl(
         movieDao = movieDao,
         categoryDao = categoryDao,
+        providerDao = providerDao,
+        xtreamApiService = xtreamApiService,
         preferencesRepository = preferencesRepository,
         favoriteDao = favoriteDao,
         playbackHistoryDao = playbackHistoryDao,

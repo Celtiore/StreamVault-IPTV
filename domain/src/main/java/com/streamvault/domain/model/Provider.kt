@@ -13,6 +13,7 @@ data class Provider(
     val maxConnections: Int = 1,
     val expirationDate: Long? = null,
     val apiVersion: String? = null,
+    val allowedOutputFormats: List<String> = emptyList(),
     val status: ProviderStatus = ProviderStatus.UNKNOWN,
     val lastSyncedAt: Long = 0L,
     val createdAt: Long = System.currentTimeMillis()

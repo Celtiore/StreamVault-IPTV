@@ -73,6 +73,7 @@ import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.Movie
 import com.streamvault.domain.model.Series
 import com.streamvault.app.ui.design.FocusSpec
+import com.streamvault.app.ui.interaction.rememberTvInteractionSounds
 
 private object ChannelProgressTicker {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -103,6 +104,7 @@ fun FocusableCard(
     content: @Composable BoxScope.(Boolean) -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val sounds = rememberTvInteractionSounds()
 
     val scale by animateFloatAsState(
         targetValue = if (isFocused) {
@@ -115,7 +117,10 @@ fun FocusableCard(
     )
 
     Surface(
-        onClick = onClick,
+        onClick = {
+            sounds.playSelect()
+            onClick()
+        },
         onLongClick = onLongClick,
         modifier = modifier
             .width(width)
@@ -128,7 +133,12 @@ fun FocusableCard(
                 semanticsDescription?.let { contentDescription = it }
                 semanticsStateDescription?.let { stateDescription = it }
             }
-            .onFocusChanged { isFocused = it.isFocused },
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    sounds.playNavigate()
+                }
+                isFocused = it.isFocused
+            },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         scale = ClickableSurfaceDefaults.scale(
             focusedScale = 1f,

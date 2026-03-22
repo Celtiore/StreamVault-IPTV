@@ -39,6 +39,7 @@ class EntityMappersTest {
             maxConnections = 3,
             expirationDate = 1_798_761_600_000L, // 2027-01-01 UTC as epoch ms
             apiVersion = "2.0.1",
+            allowedOutputFormats = listOf("m3u8", "ts"),
             status = ProviderStatus.ACTIVE,
             lastSyncedAt = 1_700_000_000_000L,
             createdAt = 1_600_000_000_000L
@@ -58,6 +59,7 @@ class EntityMappersTest {
         assertThat(roundTripped.maxConnections).isEqualTo(original.maxConnections)
         assertThat(roundTripped.expirationDate).isEqualTo(original.expirationDate)
         assertThat(roundTripped.apiVersion).isEqualTo(original.apiVersion)
+        assertThat(roundTripped.allowedOutputFormats).containsExactlyElementsIn(original.allowedOutputFormats).inOrder()
         assertThat(roundTripped.status).isEqualTo(original.status)
         assertThat(roundTripped.lastSyncedAt).isEqualTo(original.lastSyncedAt)
         assertThat(roundTripped.createdAt).isEqualTo(original.createdAt)
@@ -108,6 +110,7 @@ class EntityMappersTest {
         assertThat(roundTripped.qualityOptions).containsExactly(
             ChannelQualityOption(label = "1080p", height = 1080, url = "http://stream.example.com/99_1080.ts")
         )
+        assertThat(roundTripped.alternativeStreams).containsExactly("http://stream.example.com/99_1080.ts")
     }
 
     // ── Movie ─────────────────────────────────────────────────────

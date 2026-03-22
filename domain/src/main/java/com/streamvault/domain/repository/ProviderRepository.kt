@@ -1,5 +1,6 @@
 package com.streamvault.domain.repository
 
+import com.streamvault.domain.model.Program
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.Result
 import kotlinx.coroutines.flow.Flow
@@ -19,5 +20,13 @@ interface ProviderRepository {
         force: Boolean = false,
         onProgress: ((String) -> Unit)? = null
     ): Result<Unit>
+    suspend fun getProgramsForLiveStream(
+        providerId: Long,
+        streamId: Long,
+        epgChannelId: String? = null,
+        limit: Int = 12
+    ): Result<List<Program>>
     suspend fun buildCatchUpUrl(providerId: Long, streamId: Long, start: Long, end: Long): String?
+    suspend fun buildCatchUpUrls(providerId: Long, streamId: Long, start: Long, end: Long): List<String> =
+        listOfNotNull(buildCatchUpUrl(providerId, streamId, start, end))
 }

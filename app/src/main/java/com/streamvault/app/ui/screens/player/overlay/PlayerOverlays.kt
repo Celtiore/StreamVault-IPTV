@@ -393,6 +393,20 @@ fun ChannelInfoOverlay(
                         onInteraction = onOverlayInteracted
                     )
                 }
+                if (currentChannel?.catchUpSupported == true) {
+                    item {
+                        QuickActionButton(
+                            icon = stringResource(R.string.player_catchup_badge),
+                            label = stringResource(R.string.player_archive),
+                            onClick = {
+                                onOverlayInteracted()
+                                onDismiss()
+                                onOpenFullEpg()
+                            },
+                            onInteraction = onOverlayInteracted
+                        )
+                    }
+                }
                 if (currentChannel?.catchUpSupported == true && currentProgram?.hasArchive == true) {
                     item {
                         QuickActionButton(
@@ -751,7 +765,12 @@ fun ChannelListOverlay(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    itemsIndexed(recentChannels, key = { _, channel -> channel.id }) { index, channel ->
+                                    itemsIndexed(
+                                        recentChannels,
+                                        key = { index, channel ->
+                                            "recent:${channel.id}:${channel.streamId}:${channel.epgChannelId.orEmpty()}:${index}"
+                                        }
+                                    ) { index, channel ->
                                         Surface(
                                             onClick = {
                                                 onOverlayInteracted()
@@ -990,6 +1009,7 @@ fun EpgOverlay(
     preferredFocusedProgramToken: Long? = null,
     onFocusedProgramChange: (Long) -> Unit = {},
     onDismiss: () -> Unit,
+    onOpenArchiveBrowser: (() -> Unit)? = null,
     onPlayCatchUp: (Program) -> Unit,
     onOverlayInteracted: () -> Unit = {}
 ) {
@@ -1052,10 +1072,22 @@ fun EpgOverlay(
                         )
                         if (currentChannel.catchUpSupported) {
                             Spacer(Modifier.height(8.dp))
-                            StatusPill(
-                                label = stringResource(R.string.epg_catchup_available, currentChannel.catchUpDays),
-                                containerColor = AppColors.BrandMuted
-                            )
+                            if (onOpenArchiveBrowser != null) {
+                                QuickActionButton(
+                                    icon = stringResource(R.string.player_catchup_badge),
+                                    label = stringResource(R.string.epg_catchup_available, currentChannel.catchUpDays),
+                                    onClick = {
+                                        onOverlayInteracted()
+                                        onOpenArchiveBrowser()
+                                    },
+                                    onInteraction = onOverlayInteracted
+                                )
+                            } else {
+                                StatusPill(
+                                    label = stringResource(R.string.epg_catchup_available, currentChannel.catchUpDays),
+                                    containerColor = AppColors.BrandMuted
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))

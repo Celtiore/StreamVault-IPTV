@@ -10,7 +10,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,6 +30,7 @@ import com.streamvault.app.ui.theme.OnSurfaceDim
 import com.streamvault.app.ui.theme.Primary
 import com.streamvault.app.ui.theme.SurfaceElevated
 import com.streamvault.app.ui.theme.SurfaceHighlight
+import com.streamvault.app.ui.interaction.rememberTvInteractionSounds
 
 data class SelectionChip(
     val key: String,
@@ -54,6 +60,7 @@ fun ChipRowSection(
     focusedContainerBoostWhenSelected: Boolean = false
 ) {
     if (chips.isEmpty()) return
+    val sounds = rememberTvInteractionSounds()
 
     Column(
         modifier = modifier
@@ -86,8 +93,18 @@ fun ChipRowSection(
                 contentType = { "selection_chip" }
             ) { chip ->
                 val isSelected = chip.key == selectedKey
+                var wasFocused by remember(chip.key) { mutableStateOf(false) }
                 Surface(
-                    onClick = chip.onClick,
+                    onClick = {
+                        sounds.playSelect()
+                        chip.onClick()
+                    },
+                    modifier = Modifier.onFocusChanged {
+                        if (it.isFocused && !wasFocused) {
+                            sounds.playNavigate()
+                        }
+                        wasFocused = it.isFocused
+                    },
                     colors = ClickableSurfaceDefaults.colors(
                         containerColor = if (isSelected) Primary.copy(alpha = 0.18f) else SurfaceElevated,
                         focusedContainerColor = if (isSelected && focusedContainerBoostWhenSelected) Primary.copy(alpha = 0.28f) else SurfaceHighlight,

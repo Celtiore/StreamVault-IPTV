@@ -853,6 +853,10 @@ fun PlayerScreen(
                     preferredFocusedProgramToken = lastFocusedEpgProgramToken,
                     onFocusedProgramChange = { token -> lastFocusedEpgProgramToken = token },
                     onDismiss = { viewModel.closeOverlays() },
+                    onOpenArchiveBrowser = {
+                        showProgramHistory = true
+                        viewModel.closeOverlays()
+                    },
                     onPlayCatchUp = { program -> 
                         viewModel.playCatchUp(program)
                         viewModel.closeOverlays()

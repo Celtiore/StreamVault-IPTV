@@ -2,6 +2,7 @@ package com.streamvault.domain.usecase
 
 import com.google.common.truth.Truth.assertThat
 import com.streamvault.domain.manager.ProviderSetupInputValidator
+import com.streamvault.domain.model.Program
 import com.streamvault.domain.manager.ValidatedM3uProviderInput
 import com.streamvault.domain.manager.ValidatedXtreamProviderInput
 import com.streamvault.domain.model.Provider
@@ -198,6 +199,13 @@ private class FakeProviderRepository : ProviderRepository {
         force: Boolean,
         onProgress: ((String) -> Unit)?
     ): Result<Unit> = error("Not used in test")
+
+    override suspend fun getProgramsForLiveStream(
+        providerId: Long,
+        streamId: Long,
+        epgChannelId: String?,
+        limit: Int
+    ): Result<List<Program>> = error("Not used in test")
 
     override suspend fun buildCatchUpUrl(providerId: Long, streamId: Long, start: Long, end: Long): String? = null
 

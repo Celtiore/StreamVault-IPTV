@@ -23,6 +23,7 @@ interface PlayerEngine {
     val duration: StateFlow<Long>
     val videoFormat: StateFlow<VideoFormat>
     val error: Flow<PlayerError?>
+    val retryStatus: StateFlow<PlayerRetryStatus?>
     val playerStats: StateFlow<PlayerStats>
 
     // Tracks
@@ -75,6 +76,12 @@ interface PlayerEngine {
     fun bindRenderView(renderView: View, resizeMode: PlayerSurfaceResizeMode)
     fun releaseRenderView(renderView: View)
 }
+
+data class PlayerRetryStatus(
+    val attempt: Int,
+    val maxAttempts: Int,
+    val delayMs: Long
+)
 
 enum class PlayerSurfaceResizeMode {
     FIT,

@@ -7,6 +7,7 @@ import com.streamvault.domain.model.*
 
 private val qualityOptionsGson = Gson()
 private val channelQualityOptionsType = object : TypeToken<List<ChannelQualityOption>>() {}.type
+private val providerAllowedOutputFormatsType = object : TypeToken<List<String>>() {}.type
 
 // ── Provider ───────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ fun ProviderEntity.toDomain() = Provider(
     maxConnections = maxConnections,
     expirationDate = expirationDate,
     apiVersion = apiVersion,
+    allowedOutputFormats = decodeAllowedOutputFormats(allowedOutputFormatsJson),
     status = status,
     lastSyncedAt = lastSyncedAt,
     createdAt = createdAt
@@ -41,6 +43,7 @@ fun Provider.toEntity() = ProviderEntity(
     maxConnections = maxConnections,
     expirationDate = expirationDate,
     apiVersion = apiVersion,
+    allowedOutputFormatsJson = encodeAllowedOutputFormats(allowedOutputFormats),
     status = status,
     lastSyncedAt = lastSyncedAt,
     createdAt = createdAt
@@ -48,27 +51,31 @@ fun Provider.toEntity() = ProviderEntity(
 
 // ── Channel ────────────────────────────────────────────────────────
 
-fun ChannelEntity.toDomain() = Channel(
-    id = id,
-    name = name,
-    logoUrl = logoUrl,
-    groupTitle = groupTitle,
-    categoryId = categoryId,
-    categoryName = categoryName,
-    streamUrl = streamUrl,
-    epgChannelId = epgChannelId,
-    number = number,
-    catchUpSupported = catchUpSupported,
-    catchUpDays = catchUpDays,
-    catchUpSource = catchUpSource,
-    providerId = providerId,
-    isAdult = isAdult,
-    isUserProtected = isUserProtected,
-    logicalGroupId = logicalGroupId,
-    errorCount = errorCount,
-    qualityOptions = decodeQualityOptions(qualityOptionsJson),
-    streamId = streamId
-)
+fun ChannelEntity.toDomain(): Channel {
+    val qualityOptions = decodeQualityOptions(qualityOptionsJson)
+    return Channel(
+        id = id,
+        name = name,
+        logoUrl = logoUrl,
+        groupTitle = groupTitle,
+        categoryId = categoryId,
+        categoryName = categoryName,
+        streamUrl = streamUrl,
+        epgChannelId = epgChannelId,
+        number = number,
+        catchUpSupported = catchUpSupported,
+        catchUpDays = catchUpDays,
+        catchUpSource = catchUpSource,
+        providerId = providerId,
+        isAdult = isAdult,
+        isUserProtected = isUserProtected,
+        logicalGroupId = logicalGroupId,
+        errorCount = errorCount,
+        qualityOptions = qualityOptions,
+        alternativeStreams = qualityOptions.mapNotNull { it.url }.filter { it != streamUrl }.distinct(),
+        streamId = streamId
+    )
+}
 
 fun Channel.toEntity() = ChannelEntity(
     id = id,
@@ -386,11 +393,20 @@ fun SyncMetadataEntity.toDomain() = SyncMetadata(
     lastMovieSync = lastMovieSync,
     lastSeriesSync = lastSeriesSync,
     lastEpgSync = lastEpgSync,
+    lastMovieAttempt = lastMovieAttempt,
+    lastMovieSuccess = lastMovieSuccess,
+    lastMoviePartial = lastMoviePartial,
     liveCount = liveCount,
     movieCount = movieCount,
     seriesCount = seriesCount,
     epgCount = epgCount,
-    lastSyncStatus = lastSyncStatus
+    lastSyncStatus = lastSyncStatus,
+    movieSyncMode = runCatching { com.streamvault.domain.model.VodSyncMode.valueOf(movieSyncMode) }
+        .getOrDefault(com.streamvault.domain.model.VodSyncMode.UNKNOWN),
+    movieWarningsCount = movieWarningsCount,
+    movieCatalogStale = movieCatalogStale,
+    movieParallelFailuresRemembered = movieParallelFailuresRemembered,
+    movieHealthySyncStreak = movieHealthySyncStreak
 )
 
 fun SyncMetadata.toEntity() = SyncMetadataEntity(
@@ -399,11 +415,19 @@ fun SyncMetadata.toEntity() = SyncMetadataEntity(
     lastMovieSync = lastMovieSync,
     lastSeriesSync = lastSeriesSync,
     lastEpgSync = lastEpgSync,
+    lastMovieAttempt = lastMovieAttempt,
+    lastMovieSuccess = lastMovieSuccess,
+    lastMoviePartial = lastMoviePartial,
     liveCount = liveCount,
     movieCount = movieCount,
     seriesCount = seriesCount,
     epgCount = epgCount,
-    lastSyncStatus = lastSyncStatus
+    lastSyncStatus = lastSyncStatus,
+    movieSyncMode = movieSyncMode.name,
+    movieWarningsCount = movieWarningsCount,
+    movieCatalogStale = movieCatalogStale,
+    movieParallelFailuresRemembered = movieParallelFailuresRemembered,
+    movieHealthySyncStreak = movieHealthySyncStreak
 )
 
 private fun encodeQualityOptions(options: List<ChannelQualityOption>): String? {
@@ -420,6 +444,25 @@ private fun decodeQualityOptions(encoded: String?): List<ChannelQualityOption> {
     return runCatching {
         qualityOptionsGson.fromJson<List<ChannelQualityOption>>(encoded, channelQualityOptionsType).orEmpty()
     }.getOrDefault(emptyList())
+}
+
+private fun decodeAllowedOutputFormats(encoded: String?): List<String> {
+    if (encoded.isNullOrBlank()) {
+        return emptyList()
+    }
+    return runCatching {
+        qualityOptionsGson.fromJson<List<String>>(encoded, providerAllowedOutputFormatsType)
+            .orEmpty()
+            .mapNotNull { value -> value.trim().lowercase().takeIf { it.isNotEmpty() } }
+            .distinct()
+    }.getOrDefault(emptyList())
+}
+
+private fun encodeAllowedOutputFormats(formats: List<String>): String {
+    val normalized = formats
+        .mapNotNull { value -> value.trim().lowercase().takeIf { it.isNotEmpty() } }
+        .distinct()
+    return qualityOptionsGson.toJson(normalized, providerAllowedOutputFormatsType)
 }
 
 private fun String?.toPlaybackWatchedStatus(): PlaybackWatchedStatus =

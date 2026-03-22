@@ -1,21 +1,39 @@
 package com.streamvault.domain.model
 
+enum class VodSyncMode {
+    UNKNOWN,
+    FULL,
+    CATEGORY_BULK,
+    PAGED,
+    LAZY_BY_CATEGORY
+}
+
 data class SyncMetadata(
     val providerId: Long,
     val lastLiveSync: Long = 0,
     val lastMovieSync: Long = 0,
     val lastSeriesSync: Long = 0,
     val lastEpgSync: Long = 0,
+    val lastMovieAttempt: Long = 0,
+    val lastMovieSuccess: Long = 0,
+    val lastMoviePartial: Long = 0,
     val liveCount: Int = 0,
     val movieCount: Int = 0,
     val seriesCount: Int = 0,
     val epgCount: Int = 0,
-    val lastSyncStatus: String = "NONE"
+    val lastSyncStatus: String = "NONE",
+    val movieSyncMode: VodSyncMode = VodSyncMode.UNKNOWN,
+    val movieWarningsCount: Int = 0,
+    val movieCatalogStale: Boolean = false,
+    val movieParallelFailuresRemembered: Boolean = false,
+    val movieHealthySyncStreak: Int = 0
 ) {
     init {
         require(liveCount >= 0) { "liveCount must be non-negative" }
         require(movieCount >= 0) { "movieCount must be non-negative" }
         require(seriesCount >= 0) { "seriesCount must be non-negative" }
         require(epgCount >= 0) { "epgCount must be non-negative" }
+        require(movieWarningsCount >= 0) { "movieWarningsCount must be non-negative" }
+        require(movieHealthySyncStreak >= 0) { "movieHealthySyncStreak must be non-negative" }
     }
 }

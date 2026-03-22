@@ -20,6 +20,7 @@ import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.RecordingItem
 import com.streamvault.domain.model.RecordingStorageState
 import com.streamvault.domain.model.Result
+import com.streamvault.domain.model.VodSyncMode
 import com.streamvault.domain.usecase.ExportBackup
 import com.streamvault.domain.usecase.ExportBackupCommand
 import com.streamvault.domain.usecase.ExportBackupResult
@@ -192,12 +193,18 @@ class SettingsViewModel @Inject constructor(
                                         lastSyncStatus = metadata?.lastSyncStatus ?: "NONE",
                                         lastLiveSync = metadata?.lastLiveSync ?: 0L,
                                         lastMovieSync = metadata?.lastMovieSync ?: 0L,
+                                        lastMovieAttempt = metadata?.lastMovieAttempt ?: 0L,
+                                        lastMovieSuccess = metadata?.lastMovieSuccess ?: 0L,
+                                        lastMoviePartial = metadata?.lastMoviePartial ?: 0L,
                                         lastSeriesSync = metadata?.lastSeriesSync ?: 0L,
                                         lastEpgSync = metadata?.lastEpgSync ?: 0L,
                                         liveCount = metadata?.liveCount ?: 0,
                                         movieCount = metadata?.movieCount ?: 0,
                                         seriesCount = metadata?.seriesCount ?: 0,
                                         epgCount = metadata?.epgCount ?: 0,
+                                        movieSyncMode = metadata?.movieSyncMode ?: VodSyncMode.UNKNOWN,
+                                        movieWarningsCount = metadata?.movieWarningsCount ?: 0,
+                                        movieCatalogStale = metadata?.movieCatalogStale ?: false,
                                         capabilitySummary = buildCapabilitySummary(provider),
                                         sourceLabel = when (provider.type) {
                                             ProviderType.XTREAM_CODES -> "Xtream Codes"
@@ -615,9 +622,9 @@ class SettingsViewModel @Inject constructor(
         return when (provider.type) {
             ProviderType.XTREAM_CODES -> {
                 if (provider.epgUrl.isNotBlank()) {
-                    "Xtream source with guide support. Catch-up is available when the provider exposes replay streams."
+                    "Xtream source with XMLTV guide support and on-demand guide fallback. Catch-up is available when the provider exposes replay streams."
                 } else {
-                    "Xtream source. Catch-up depends on provider replay support."
+                    "Xtream source with on-demand guide fallback. Catch-up depends on provider replay support."
                 }
             }
             ProviderType.M3U -> {
@@ -635,12 +642,18 @@ data class ProviderDiagnosticsUiModel(
     val lastSyncStatus: String = "NONE",
     val lastLiveSync: Long = 0L,
     val lastMovieSync: Long = 0L,
+    val lastMovieAttempt: Long = 0L,
+    val lastMovieSuccess: Long = 0L,
+    val lastMoviePartial: Long = 0L,
     val lastSeriesSync: Long = 0L,
     val lastEpgSync: Long = 0L,
     val liveCount: Int = 0,
     val movieCount: Int = 0,
     val seriesCount: Int = 0,
     val epgCount: Int = 0,
+    val movieSyncMode: VodSyncMode = VodSyncMode.UNKNOWN,
+    val movieWarningsCount: Int = 0,
+    val movieCatalogStale: Boolean = false,
     val capabilitySummary: String = "",
     val sourceLabel: String = "",
     val expirySummary: String = "",

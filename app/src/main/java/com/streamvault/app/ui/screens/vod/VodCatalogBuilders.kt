@@ -85,10 +85,8 @@ suspend fun <Item> buildVodPreviewCatalog(
         .forEach { category ->
             val preview = providerPreviews[category.id].orEmpty()
                 .let { items -> markVodFavorites(items, globalFavoriteIds, itemId, copyWithFavorite) }
-            if (preview.isNotEmpty()) {
-                previewRows[category.name] = preview
-                countMap[category.name] = providerCategoryCounts[category.id] ?: preview.size
-            }
+            previewRows[category.name] = preview
+            countMap[category.name] = providerCategoryCounts[category.id] ?: preview.size
         }
 
     return VodCatalogSnapshot(

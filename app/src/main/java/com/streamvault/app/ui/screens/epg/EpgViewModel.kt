@@ -12,6 +12,9 @@ import com.streamvault.domain.repository.FavoriteRepository
 import com.streamvault.domain.repository.ProviderRepository
 import com.streamvault.data.preferences.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,6 +84,7 @@ class EpgViewModel @Inject constructor(
 
     companion object {
         const val MAX_CHANNELS = 60
+        private const val MAX_XTREAM_GUIDE_FALLBACK_CHANNELS = 12
         const val LOOKBACK_MS = 60 * 60 * 1000L
         const val LOOKAHEAD_MS = 6 * 60 * 60 * 1000L
         const val HALF_HOUR_SHIFT_MS = 30 * 60 * 1000L
@@ -358,6 +362,7 @@ class EpgViewModel @Inject constructor(
                         val windowStart = anchorTime - LOOKBACK_MS
                         val windowEnd = anchorTime + LOOKAHEAD_MS
                         val guideResult = loadGuidePrograms(
+                            provider = provider,
                             providerId = provider.id,
                             channels = visibleChannels,
                             categoryId = resolvedCategoryId,
@@ -454,6 +459,7 @@ class EpgViewModel @Inject constructor(
     }
 
     private suspend fun loadGuidePrograms(
+        provider: com.streamvault.domain.model.Provider,
         providerId: Long,
         channels: List<Channel>,
         categoryId: Long,
@@ -494,10 +500,71 @@ class EpgViewModel @Inject constructor(
             }
         }.getOrElse { emptyMap() }
 
-        return GuideProgramsResult(
-            programsByChannel = programsByChannel,
-            failedCount = epgIds.count { epgId -> programsByChannel[epgId].isNullOrEmpty() }
+        val fallbackProgramsByChannel = fetchXtreamGuideFallback(
+            provider = provider,
+            providerId = providerId,
+            channels = channels,
+            searchQuery = searchQuery,
+            existingProgramsByChannel = programsByChannel,
+            windowStart = windowStart,
+            windowEnd = windowEnd
         )
+        val mergedProgramsByChannel = programsByChannel + fallbackProgramsByChannel
+
+        return GuideProgramsResult(
+            programsByChannel = mergedProgramsByChannel,
+            failedCount = epgIds.count { epgId -> mergedProgramsByChannel[epgId].isNullOrEmpty() }
+        )
+    }
+
+    private suspend fun fetchXtreamGuideFallback(
+        provider: com.streamvault.domain.model.Provider,
+        providerId: Long,
+        channels: List<Channel>,
+        searchQuery: String,
+        existingProgramsByChannel: Map<String, List<Program>>,
+        windowStart: Long,
+        windowEnd: Long
+    ): Map<String, List<Program>> {
+        if (provider.type != com.streamvault.domain.model.ProviderType.XTREAM_CODES) {
+            return emptyMap()
+        }
+        if (searchQuery.isNotBlank()) {
+            return emptyMap()
+        }
+
+        val missingChannels = channels.filter { channel ->
+            !channel.epgChannelId.isNullOrBlank() &&
+                channel.streamId > 0L &&
+                existingProgramsByChannel[channel.epgChannelId].isNullOrEmpty()
+        }
+        if (missingChannels.isEmpty()) {
+            return emptyMap()
+        }
+
+        return coroutineScope {
+            missingChannels
+                .take(MAX_XTREAM_GUIDE_FALLBACK_CHANNELS)
+                .map { channel ->
+                    async {
+                        val result = providerRepository.getProgramsForLiveStream(
+                            providerId = providerId,
+                            streamId = channel.streamId,
+                            epgChannelId = channel.epgChannelId,
+                            limit = 12
+                        )
+                        val programs = (result as? com.streamvault.domain.model.Result.Success)?.data
+                            .orEmpty()
+                            .filter { program -> program.endTime > windowStart && program.startTime < windowEnd }
+                            .sortedBy { program -> program.startTime }
+                        val epgId = channel.epgChannelId ?: return@async null
+                        if (programs.isEmpty()) null else epgId to programs
+                    }
+                }
+                .awaitAll()
+                .mapNotNull { it }
+                .toMap()
+        }
     }
 
 }

@@ -12,8 +12,8 @@ import com.streamvault.data.util.ProviderInputSanitizer
 import com.streamvault.data.util.UrlSecurityPolicy
 import com.streamvault.domain.model.*
 import com.streamvault.domain.provider.IptvProvider
-import com.streamvault.domain.repository.EpgRepository
 import com.streamvault.domain.repository.ProviderRepository
+import com.streamvault.domain.repository.SyncMetadataRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -25,7 +25,8 @@ class ProviderRepositoryImpl @Inject constructor(
     private val channelDao: ChannelDao,
     private val programDao: ProgramDao,
     private val xtreamApiService: XtreamApiService,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val syncMetadataRepository: SyncMetadataRepository
 ) : ProviderRepository {
 
     override fun getProviders(): Flow<List<Provider>> =
@@ -101,21 +102,20 @@ class ProviderRepositoryImpl @Inject constructor(
         val provider = createXtreamProvider(0, normalizedServerUrl, normalizedUsername, effectivePassword)
         return when (val authResult = provider.authenticate()) {
             is Result.Success -> {
-
                 val providerData = if (existingProvider != null) {
                     onProgress?.invoke("Updating existing provider...")
-                    val updated = existingProvider.copy(
+                    val updated = authResult.data.copy(
+                        id = existingProvider.id,
                         name = normalizedName.ifBlank { existingProvider.name },
                         serverUrl = normalizedServerUrl,
                         username = normalizedUsername,
                         password = effectivePassword,
                         isActive = true,
-                        lastSyncedAt = 0
+                        lastSyncedAt = 0,
+                        createdAt = existingProvider.createdAt
                     )
-                    providerDao.update(
-                        updated.copy(password = CredentialCrypto.encryptIfNeeded(updated.password))
-                    )
-                    updated.toPublicDomain()
+                    providerDao.update(updated.toSecureEntity())
+                    updated.copy(password = "")
                 } else {
                     val newData = authResult.data.copy(name = normalizedName.ifBlank { authResult.data.name })
                     val newId = providerDao.insert(newData.toSecureEntity())
@@ -257,27 +257,114 @@ class ProviderRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getProgramsForLiveStream(
+        providerId: Long,
+        streamId: Long,
+        epgChannelId: String?,
+        limit: Int
+    ): Result<List<Program>> {
+        if (providerId <= 0L || streamId <= 0L) {
+            return Result.error("Live stream context is unavailable.")
+        }
+
+        val providerEntity = providerDao.getById(providerId)
+            ?: return Result.error("Provider $providerId not found")
+        val provider = providerEntity.toPublicDomain()
+        if (provider.type != ProviderType.XTREAM_CODES) {
+            return Result.error("On-demand guide lookup is available only for Xtream providers.")
+        }
+
+        val providerPassword = try {
+            CredentialCrypto.decryptIfNeeded(providerEntity.password)
+        } catch (e: CredentialDecryptionException) {
+            return Result.error(e.message ?: CredentialDecryptionException.MESSAGE, e)
+        }
+
+        val xtreamProvider = createXtreamProvider(
+            providerId = providerId,
+            serverUrl = provider.serverUrl,
+            username = provider.username,
+            password = providerPassword,
+            allowedOutputFormats = provider.allowedOutputFormats
+        )
+
+        val shortProgramsResult = xtreamProvider.getShortEpg(
+            channelId = streamId.toString(),
+            limit = limit.coerceAtLeast(1)
+        )
+        val shortPrograms = (shortProgramsResult as? Result.Success)?.data
+            ?.sortedBy { it.startTime }
+            .orEmpty()
+        if (shortPrograms.isNotEmpty()) {
+            val normalizedPrograms = normalizeXtreamPrograms(
+                providerId = providerId,
+                channelId = epgChannelId ?: streamId.toString(),
+                programs = shortPrograms
+            )
+            cacheProgramsForChannel(providerId, normalizedPrograms)
+            refreshCachedEpgMetadata(providerId)
+            return Result.success(normalizedPrograms)
+        }
+
+        return when (val fullProgramsResult = xtreamProvider.getEpg(streamId.toString())) {
+            is Result.Success -> {
+                val normalizedPrograms = normalizeXtreamPrograms(
+                    providerId = providerId,
+                    channelId = epgChannelId ?: streamId.toString(),
+                    programs = fullProgramsResult.data.sortedBy { it.startTime }
+                )
+                cacheProgramsForChannel(providerId, normalizedPrograms)
+                refreshCachedEpgMetadata(providerId)
+                Result.success(normalizedPrograms)
+            }
+            is Result.Error -> {
+                val shortError = shortProgramsResult as? Result.Error
+                val combinedMessage = listOfNotNull(
+                    shortError?.message?.takeIf { it.isNotBlank() },
+                    fullProgramsResult.message.takeIf { it.isNotBlank() }
+                )
+                    .distinct()
+                    .joinToString(separator = " / ")
+                    .ifBlank { "Failed to load on-demand guide" }
+                Result.error(combinedMessage, fullProgramsResult.exception ?: shortError?.exception)
+            }
+            is Result.Loading -> Result.error("Unexpected loading state")
+        }
+    }
+
     override suspend fun buildCatchUpUrl(providerId: Long, streamId: Long, start: Long, end: Long): String? {
-        val providerEntity = providerDao.getById(providerId) ?: return null
+        return buildCatchUpUrls(providerId, streamId, start, end).firstOrNull()
+    }
+
+    override suspend fun buildCatchUpUrls(providerId: Long, streamId: Long, start: Long, end: Long): List<String> {
+        val providerEntity = providerDao.getById(providerId) ?: return emptyList()
         val provider = providerEntity.toPublicDomain()
         val providerPassword = CredentialCrypto.decryptIfNeeded(providerEntity.password)
         val channel = channelDao.getById(streamId)
         val resolvedStreamId = channel?.streamId?.takeIf { it > 0 } ?: streamId
         return if (provider.type == ProviderType.XTREAM_CODES) {
-            createXtreamProvider(providerId, provider.serverUrl, provider.username, providerPassword)
-                .buildCatchUpUrl(resolvedStreamId, start, end)
+            createXtreamProvider(
+                providerId = providerId,
+                serverUrl = provider.serverUrl,
+                username = provider.username,
+                password = providerPassword,
+                allowedOutputFormats = provider.allowedOutputFormats
+            )
+                .buildCatchUpUrls(resolvedStreamId, start, end)
         } else {
             // M3U catch-up
-            val source = channel?.catchUpSource ?: return null
+            val source = channel?.catchUpSource ?: return emptyList()
 
             // Substitute common provider placeholder variants.
-            source.replace("{start}", start.toString())
-                .replace("{end}", end.toString())
-                .replace("{duration}", (end - start).toString())
-                .replace("{utc}", start.toString())
-                .replace("{utcend}", end.toString())
-                .replace("{lutc}", end.toString())
-                .replace("{timestamp}", start.toString())
+            listOf(
+                source.replace("{start}", start.toString())
+                    .replace("{end}", end.toString())
+                    .replace("{duration}", (end - start).toString())
+                    .replace("{utc}", start.toString())
+                    .replace("{utcend}", end.toString())
+                    .replace("{lutc}", end.toString())
+                    .replace("{timestamp}", start.toString())
+            )
         }
     }
 
@@ -285,13 +372,15 @@ class ProviderRepositoryImpl @Inject constructor(
         providerId: Long,
         serverUrl: String,
         username: String,
-        password: String
+        password: String,
+        allowedOutputFormats: List<String> = emptyList()
     ): IptvProvider = XtreamProvider(
         providerId = providerId,
         api = xtreamApiService,
         serverUrl = serverUrl,
         username = username,
-        password = password
+        password = password,
+        allowedOutputFormats = allowedOutputFormats
     )
 
     private fun ProviderEntity.toPublicDomain(): Provider {
@@ -314,5 +403,33 @@ class ProviderRepositoryImpl @Inject constructor(
             lastSyncedAt = lastSyncedAt ?: current.lastSyncedAt
         )
         providerDao.update(updated)
+    }
+
+    private fun normalizeXtreamPrograms(
+        providerId: Long,
+        channelId: String,
+        programs: List<Program>
+    ): List<Program> {
+        return programs.map { program ->
+            program.copy(
+                providerId = providerId,
+                channelId = channelId
+            )
+        }
+    }
+
+    private suspend fun cacheProgramsForChannel(providerId: Long, programs: List<Program>) {
+        val channelId = programs.firstOrNull()?.channelId ?: return
+        programDao.deleteForChannel(providerId, channelId)
+        programDao.insertAll(programs.map { it.toEntity().copy(providerId = providerId) })
+    }
+
+    private suspend fun refreshCachedEpgMetadata(providerId: Long) {
+        val now = System.currentTimeMillis()
+        val metadata = (syncMetadataRepository.getMetadata(providerId) ?: SyncMetadata(providerId)).copy(
+            lastEpgSync = now,
+            epgCount = programDao.countByProvider(providerId)
+        )
+        syncMetadataRepository.updateMetadata(metadata)
     }
 }

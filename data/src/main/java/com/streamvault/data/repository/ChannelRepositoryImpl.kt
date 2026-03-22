@@ -219,11 +219,12 @@ class ChannelRepositoryImpl @Inject constructor(
 
         return grouped.values.map { group ->
             val primaryEntity = group.primary
-            val alternativeStreams = group.alternatives
+            val primaryDomain = primaryEntity.toDomain()
+            val alternativeStreams = (group.alternatives
                 .sortedWith(channelPriorityComparator)
                 .map { it.streamUrl }
-
-            val primaryDomain = primaryEntity.toDomain()
+                + primaryDomain.qualityOptions.mapNotNull { it.url }.filter { it != primaryEntity.streamUrl })
+                .distinct()
             val mergedQualityOptions = buildMergedQualityOptions(
                 baseOptions = primaryDomain.qualityOptions,
                 primaryStreamUrl = primaryEntity.streamUrl,

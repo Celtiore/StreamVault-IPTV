@@ -64,6 +64,7 @@ object Routes {
     const val PLAYER = "player"
     const val SEARCH = "search"
     const val SEARCH_DESTINATION = "search?query={query}"
+    const val MOVIE_DETAIL = "movie_detail/{movieId}"
     const val SERIES_DETAIL = "series_detail/{seriesId}"
     const val WELCOME = "welcome"
     const val PARENTAL_CONTROL_GROUPS = "parental_control_groups/{providerId}"
@@ -158,6 +159,7 @@ object Routes {
         )
     }
 
+    fun movieDetail(movieId: Long) = "movie_detail/$movieId"
     fun seriesDetail(seriesId: Long) = "series_detail/$seriesId"
     fun parentalControlGroups(providerId: Long) = "parental_control_groups/$providerId"
 }
@@ -276,7 +278,7 @@ fun AppNavigation(mainActivity: MainActivity) {
                     )
                 },
                 onMovieClick = { movie ->
-                    navController.navigateToPlayer(Routes.moviePlayer(movie))
+                    navController.navigateIfResumed(Routes.movieDetail(movie.id))
                 },
                 onSeriesClick = { series ->
                     navController.navigateIfResumed(Routes.seriesDetail(series.id))
@@ -352,7 +354,7 @@ fun AppNavigation(mainActivity: MainActivity) {
         composable(Routes.MOVIES) {
             MoviesScreen(
                 onMovieClick = { movie ->
-                    navController.navigateToPlayer(Routes.moviePlayer(movie))
+                    navController.navigateIfResumed(Routes.movieDetail(movie.id))
                 },
                 onNavigate = { route -> tabNavigate(route) },
                 currentRoute = Routes.MOVIES
@@ -547,7 +549,7 @@ fun AppNavigation(mainActivity: MainActivity) {
                     )
                 },
                 onMovieClick = { movie ->
-                     navController.navigateToPlayer(Routes.moviePlayer(movie))
+                     navController.navigateIfResumed(Routes.movieDetail(movie.id))
                 },
                 onSeriesClick = { series ->
                      navController.navigateIfResumed(Routes.seriesDetail(series.id))
@@ -586,6 +588,20 @@ fun AppNavigation(mainActivity: MainActivity) {
                         }
                     }
                 }
+            )
+        }
+
+        composable(
+            route = Routes.MOVIE_DETAIL,
+            arguments = listOf(
+                navArgument("movieId") { type = NavType.LongType }
+            )
+        ) {
+            com.streamvault.app.ui.screens.movies.MovieDetailScreen(
+                onPlay = { movie ->
+                    navController.navigateToPlayer(Routes.moviePlayer(movie))
+                },
+                onBack = { navController.popBackStack() }
             )
         }
 

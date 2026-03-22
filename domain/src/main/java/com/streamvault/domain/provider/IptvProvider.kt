@@ -27,4 +27,6 @@ interface IptvProvider {
 
     suspend fun buildStreamUrl(streamId: Long, containerExtension: String? = null): String
     suspend fun buildCatchUpUrl(streamId: Long, start: Long, end: Long): String?
+    suspend fun buildCatchUpUrls(streamId: Long, start: Long, end: Long): List<String> =
+        listOfNotNull(buildCatchUpUrl(streamId, start, end))
 }

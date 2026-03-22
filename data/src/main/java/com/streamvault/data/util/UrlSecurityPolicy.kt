@@ -5,6 +5,7 @@ import java.util.Locale
 
 object UrlSecurityPolicy {
     private val secureRemoteSchemes = setOf("https")
+    private val xtreamServerSchemes = setOf("http", "https")
     private val localSchemes = setOf("file", "content")
     // IPTV stream/asset URLs may legitimately use plain HTTP or RTSP
     private val streamEntrySchemes = setOf("http", "https", "rtsp", "rtsps", "rtmp", "file", "content")
@@ -20,10 +21,18 @@ object UrlSecurityPolicy {
         !containsNewlines(url) && hasAllowedScheme(url, streamEntrySchemes)
 
     fun validateXtreamServerUrl(url: String): String? {
-        return if (isSecureRemoteUrl(url)) {
+        return if (!containsNewlines(url) && hasAllowedScheme(url, xtreamServerSchemes)) {
             null
         } else {
-            "Only HTTPS Xtream server URLs are supported."
+            "Xtream server URLs must use HTTP or HTTPS."
+        }
+    }
+
+    fun validateXtreamEpgUrl(url: String): String? {
+        return if (!containsNewlines(url) && hasAllowedScheme(url, xtreamServerSchemes)) {
+            null
+        } else {
+            "Xtream EPG URLs must use HTTP or HTTPS."
         }
     }
 

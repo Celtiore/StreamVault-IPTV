@@ -26,7 +26,7 @@ import com.streamvault.data.local.entity.*
         PlaybackHistoryEntity::class,
         SyncMetadataEntity::class
     ],
-    version = 16,
+    version = 19,
     exportSchema = true   // ← was false; schema JSON now tracked in version control
 )
 @TypeConverters(RoomEnumConverters::class)
@@ -966,6 +966,32 @@ abstract class StreamVaultDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS index_channels_provider_id_category_id_logical_group_id " +
                         "ON channels(provider_id, category_id, logical_group_id)"
                 )
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE providers ADD COLUMN allowed_output_formats_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN last_movie_attempt INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN last_movie_success INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN last_movie_partial INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN movie_sync_mode TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN movie_warnings_count INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN movie_catalog_stale INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN movie_parallel_failures_remembered INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE sync_metadata ADD COLUMN movie_healthy_sync_streak INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

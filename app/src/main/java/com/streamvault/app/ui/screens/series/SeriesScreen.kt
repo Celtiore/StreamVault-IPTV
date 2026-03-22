@@ -523,172 +523,168 @@ private fun SeriesVodContent(
     }
     var draggingSeries by remember { mutableStateOf<Series?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        VodActionChipRow(
-            actions = buildList {
-                add(
-                    VodActionChip(
-                        key = "back_home",
-                        label = stringResource(R.string.nav_series),
-                        detail = stringResource(R.string.category_see_all),
-                        onClick = { onSelectCategory(null) }
-                    )
-                )
-                add(
-                    VodActionChip(
-                        key = uiState.fullLibraryCategoryName,
-                        label = stringResource(R.string.library_full_browse_title_series),
-                        detail = "${uiState.libraryCount} titles",
-                        onClick = onSelectFullLibraryBrowse
-                    )
-                )
-                add(
-                    VodActionChip(
-                        key = "categories",
-                        label = stringResource(R.string.series_categories_title),
-                        detail = "${uiState.categoryNames.size} groups",
-                        onClick = { showCategoryPicker = true }
-                    )
-                )
-                if (uiState.selectedCategory != uiState.fullLibraryCategoryName) {
-                    add(
-                        VodActionChip(
-                            key = uiState.selectedCategory ?: "",
-                            label = uiState.selectedCategory ?: stringResource(R.string.nav_series),
-                            detail = "${uiState.selectedCategoryTotalCount} titles",
-                            onClick = { showCategoryPicker = true }
-                        )
-                    )
-                }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 148.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                if (uiState.isReorderMode && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                    if (event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                        draggingSeries = null
+                        onDismissReorder()
+                        true
+                    } else false
+                } else false
             },
-            selectedKey = uiState.selectedCategory,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-
-        if (!uiState.isReorderMode) {
-            SearchInput(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = stringResource(R.string.series_search_placeholder),
-                onSearch = {},
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            )
-            SelectionChipRow(
-                title = stringResource(R.string.library_filter_title),
-                chips = seriesFilterChips(),
-                selectedKey = selectedFilterType.name,
-                onChipSelected = { key ->
-                    LibraryFilterType.entries.firstOrNull { it.name == key }?.let(onSelectedFilterTypeChange)
-                },
-                modifier = Modifier.padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            )
-            SelectionChipRow(
-                title = stringResource(R.string.library_sort_title),
-                chips = LibrarySortBy.entries.map { sort ->
-                    SelectionChip(
-                        key = sort.name,
-                        label = when (sort) {
-                            LibrarySortBy.LIBRARY -> stringResource(R.string.library_sort_library)
-                            LibrarySortBy.TITLE -> stringResource(R.string.library_sort_az)
-                            LibrarySortBy.RELEASE -> stringResource(R.string.library_sort_release)
-                            LibrarySortBy.UPDATED -> stringResource(R.string.library_sort_updated)
-                            LibrarySortBy.RATING -> stringResource(R.string.library_sort_rating)
-                            LibrarySortBy.WATCH_COUNT -> "Recent Activity"
-                        }
-                    )
-                },
-                selectedKey = selectedSortBy.name,
-                onChipSelected = { key ->
-                    LibrarySortBy.entries.firstOrNull { it.name == key }?.let(onSelectedSortByChange)
-                },
-                modifier = Modifier.padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            VodSectionHeader(
+                title = when (uiState.selectedCategory) {
+                    uiState.fullLibraryCategoryName -> stringResource(R.string.library_full_browse_title_series)
+                    else -> uiState.selectedCategory ?: stringResource(R.string.nav_series)
+                }
             )
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 148.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .onPreviewKeyEvent { event ->
-                    if (uiState.isReorderMode && event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
-                        if (event.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-                            draggingSeries = null
-                            onDismissReorder()
-                            true
-                        } else false
-                    } else false
-                },
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
+        if (!uiState.isReorderMode) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                VodSectionHeader(
-                    title = when (uiState.selectedCategory) {
-                        uiState.fullLibraryCategoryName -> stringResource(R.string.library_full_browse_title_series)
-                        else -> uiState.selectedCategory ?: stringResource(R.string.nav_series)
+                VodActionChipRow(
+                    actions = buildList {
+                        add(
+                            VodActionChip(
+                                key = "back_home",
+                                label = stringResource(R.string.nav_series),
+                                onClick = { onSelectCategory(null) }
+                            )
+                        )
+                        add(
+                            VodActionChip(
+                                key = "categories",
+                                label = stringResource(R.string.series_categories_title),
+                                onClick = { showCategoryPicker = true }
+                            )
+                        )
+                        if (uiState.selectedCategory != uiState.fullLibraryCategoryName) {
+                            add(
+                                VodActionChip(
+                                    key = uiState.fullLibraryCategoryName,
+                                    label = stringResource(R.string.library_full_browse_title_series),
+                                    onClick = onSelectFullLibraryBrowse
+                                )
+                            )
+                        }
+                    },
+                    modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
+                )
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SearchInput(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = stringResource(R.string.series_search_placeholder),
+                    onSearch = {},
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SelectionChipRow(
+                    title = "",
+                    chips = seriesFilterChips(),
+                    selectedKey = selectedFilterType.name,
+                    onChipSelected = { key ->
+                        LibraryFilterType.entries.firstOrNull { it.name == key }?.let(onSelectedFilterTypeChange)
+                    },
+                    modifier = Modifier.padding(horizontal = 0.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                )
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SelectionChipRow(
+                    title = "",
+                    chips = LibrarySortBy.entries.map { sort ->
+                        SelectionChip(
+                            key = sort.name,
+                            label = when (sort) {
+                                LibrarySortBy.LIBRARY -> stringResource(R.string.library_sort_library)
+                                LibrarySortBy.TITLE -> stringResource(R.string.library_sort_az)
+                                LibrarySortBy.RELEASE -> stringResource(R.string.library_sort_release)
+                                LibrarySortBy.UPDATED -> stringResource(R.string.library_sort_updated)
+                                LibrarySortBy.RATING -> stringResource(R.string.library_sort_rating)
+                                LibrarySortBy.WATCH_COUNT -> "Recent Activity"
+                            }
+                        )
+                    },
+                    selectedKey = selectedSortBy.name,
+                    onChipSelected = { key ->
+                        LibrarySortBy.entries.firstOrNull { it.name == key }?.let(onSelectedSortByChange)
+                    },
+                    modifier = Modifier.padding(horizontal = 0.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                )
+            }
+        }
+
+        if (uiState.isLoadingSelectedCategory) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(loadingSectionHeight),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = Color.White)
+                        Text(
+                            text = stringResource(R.string.series_loading),
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        } else {
+            gridItems(filteredGridSeries, key = { it.id }) { series ->
+                val isLocked = (series.isAdult || series.isUserProtected) && uiState.parentalControlLevel == 1
+                val isDraggingThis = draggingSeries == series
+                SeriesCard(
+                    series = series,
+                    isLocked = isLocked,
+                    isReorderMode = uiState.isReorderMode,
+                    isDragging = isDraggingThis,
+                    onClick = {
+                        if (uiState.isReorderMode) {
+                            draggingSeries = if (isDraggingThis) null else series
+                        } else if (isLocked) {
+                            onProtectedSeriesClick(series.id)
+                        } else {
+                            onSeriesClick(series.id)
+                        }
+                    },
+                    onLongClick = {
+                        if (!uiState.isReorderMode) onShowDialog(series)
                     }
                 )
             }
 
-            if (uiState.isLoadingSelectedCategory) {
+            if (!uiState.isReorderMode && uiState.canLoadMoreSelectedCategory) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(loadingSectionHeight),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            CircularProgressIndicator(color = Color.White)
-                            Text(
-                                text = stringResource(R.string.series_loading),
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-            } else {
-                gridItems(filteredGridSeries, key = { it.id }) { series ->
-                    val isLocked = (series.isAdult || series.isUserProtected) && uiState.parentalControlLevel == 1
-                    val isDraggingThis = draggingSeries == series
-                    SeriesCard(
-                        series = series,
-                        isLocked = isLocked,
-                        isReorderMode = uiState.isReorderMode,
-                        isDragging = isDraggingThis,
-                        onClick = {
-                            if (uiState.isReorderMode) {
-                                draggingSeries = if (isDraggingThis) null else series
-                            } else if (isLocked) {
-                                onProtectedSeriesClick(series.id)
-                            } else {
-                                onSeriesClick(series.id)
-                            }
-                        },
-                        onLongClick = {
-                            if (!uiState.isReorderMode) onShowDialog(series)
-                        }
+                    LoadMoreCard(
+                        label = stringResource(
+                            R.string.library_load_more,
+                            uiState.selectedCategoryLoadedCount,
+                            uiState.selectedCategoryTotalCount
+                        ),
+                        onClick = onLoadMore,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
                     )
-                }
-
-                if (!uiState.isReorderMode && uiState.canLoadMoreSelectedCategory) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        LoadMoreCard(
-                            label = stringResource(
-                                R.string.library_load_more,
-                                uiState.selectedCategoryLoadedCount,
-                                uiState.selectedCategoryTotalCount
-                            ),
-                            onClick = onLoadMore,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
-                        )
-                    }
                 }
             }
         }

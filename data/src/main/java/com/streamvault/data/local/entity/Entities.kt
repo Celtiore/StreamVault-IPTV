@@ -28,6 +28,7 @@ data class ProviderEntity(
     @ColumnInfo(name = "max_connections") val maxConnections: Int = 1,
     @ColumnInfo(name = "expiration_date") val expirationDate: Long? = null,
     @ColumnInfo(name = "api_version") val apiVersion: String? = null,
+    @ColumnInfo(name = "allowed_output_formats_json") val allowedOutputFormatsJson: String = "[]",
     val status: ProviderStatus = ProviderStatus.UNKNOWN,
     @ColumnInfo(name = "last_synced_at") val lastSyncedAt: Long = 0,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
@@ -383,9 +384,17 @@ data class SyncMetadataEntity(
     @ColumnInfo(name = "last_movie_sync") val lastMovieSync: Long = 0,
     @ColumnInfo(name = "last_series_sync") val lastSeriesSync: Long = 0,
     @ColumnInfo(name = "last_epg_sync") val lastEpgSync: Long = 0,
+    @ColumnInfo(name = "last_movie_attempt") val lastMovieAttempt: Long = 0,
+    @ColumnInfo(name = "last_movie_success") val lastMovieSuccess: Long = 0,
+    @ColumnInfo(name = "last_movie_partial") val lastMoviePartial: Long = 0,
     @ColumnInfo(name = "live_count") val liveCount: Int = 0,
     @ColumnInfo(name = "movie_count") val movieCount: Int = 0,
     @ColumnInfo(name = "series_count") val seriesCount: Int = 0,
     @ColumnInfo(name = "epg_count") val epgCount: Int = 0,
-    @ColumnInfo(name = "last_sync_status") val lastSyncStatus: String = "NONE"
+    @ColumnInfo(name = "last_sync_status") val lastSyncStatus: String = "NONE",
+    @ColumnInfo(name = "movie_sync_mode") val movieSyncMode: String = "UNKNOWN",
+    @ColumnInfo(name = "movie_warnings_count") val movieWarningsCount: Int = 0,
+    @ColumnInfo(name = "movie_catalog_stale") val movieCatalogStale: Boolean = false,
+    @ColumnInfo(name = "movie_parallel_failures_remembered") val movieParallelFailuresRemembered: Boolean = false,
+    @ColumnInfo(name = "movie_healthy_sync_streak") val movieHealthySyncStreak: Int = 0
 )

@@ -21,6 +21,7 @@ captures/
 local.properties
 keystore.properties
 keystore/
+release-signing-info.local.txt
 *.jks
 *.keystore
 *.p12

@@ -6,10 +6,19 @@ import org.junit.Test
 class UrlSecurityPolicyTest {
 
     @Test
-    fun `validateXtreamServerUrl rejects non https endpoints`() {
-        assertThat(UrlSecurityPolicy.validateXtreamServerUrl("http://provider.example.com"))
-            .isEqualTo("Only HTTPS Xtream server URLs are supported.")
+    fun `validateXtreamServerUrl allows http and https endpoints`() {
+        assertThat(UrlSecurityPolicy.validateXtreamServerUrl("http://provider.example.com")).isNull()
         assertThat(UrlSecurityPolicy.validateXtreamServerUrl("https://provider.example.com")).isNull()
+        assertThat(UrlSecurityPolicy.validateXtreamServerUrl("ftp://provider.example.com"))
+            .isEqualTo("Xtream server URLs must use HTTP or HTTPS.")
+    }
+
+    @Test
+    fun `validateXtreamEpgUrl allows http and https endpoints`() {
+        assertThat(UrlSecurityPolicy.validateXtreamEpgUrl("http://provider.example.com/xmltv.php")).isNull()
+        assertThat(UrlSecurityPolicy.validateXtreamEpgUrl("https://provider.example.com/xmltv.php")).isNull()
+        assertThat(UrlSecurityPolicy.validateXtreamEpgUrl("file:///storage/emulated/0/guide.xml"))
+            .isEqualTo("Xtream EPG URLs must use HTTP or HTTPS.")
     }
 
     @Test

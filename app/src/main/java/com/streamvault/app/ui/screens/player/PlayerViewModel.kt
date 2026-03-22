@@ -61,7 +61,8 @@ data class NumericChannelInputState(
 data class PlayerNoticeState(
     val message: String = "",
     val recoveryType: PlayerRecoveryType = PlayerRecoveryType.UNKNOWN,
-    val actions: List<PlayerNoticeAction> = emptyList()
+    val actions: List<PlayerNoticeAction> = emptyList(),
+    val isRetryNotice: Boolean = false
 )
 
 data class SeekPreviewState(
@@ -210,6 +211,7 @@ class PlayerViewModel @Inject constructor(
     private var channelInfoHideJob: Job? = null
     private var liveOverlayHideJob: Job? = null
     private var diagnosticsHideJob: Job? = null
+    private var remoteEpgFallbackJob: Job? = null
     private var numericInputCommitJob: Job? = null
     private var numericInputFeedbackJob: Job? = null
     private var playerNoticeHideJob: Job? = null
@@ -222,6 +224,7 @@ class PlayerViewModel @Inject constructor(
     private var prepareRequestVersion: Long = 0L
     private var currentArtworkUrl: String? = null
     private var currentResolvedPlaybackUrl: String = ""
+    private var pendingCatchUpUrls: List<String> = emptyList()
 
     val castConnectionState: StateFlow<CastConnectionState> = castManager.connectionState
 
@@ -244,6 +247,7 @@ class PlayerViewModel @Inject constructor(
                 _playerDiagnostics.update { it.copy(playbackStateLabel = state.name.replace('_', ' ')) }
                 if (state == PlaybackState.READY && currentContentType == ContentType.LIVE) {
                     zapBufferWatchdogJob?.cancel()
+                    dismissRetryNoticeIfPresent()
                     _currentChannel.value?.let { channel ->
                         if (channel.errorCount > 0) {
                             logRepositoryFailure(
@@ -253,6 +257,12 @@ class PlayerViewModel @Inject constructor(
                         }
                     }
                 }
+            }
+        }
+        viewModelScope.launch {
+            playerEngine.retryStatus.collect { status ->
+                status ?: return@collect
+                showRetryNotice(status)
             }
         }
         viewModelScope.launch {
@@ -305,6 +315,40 @@ class PlayerViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
+            if (isCatchUpPlayback()) {
+                markStreamFailure(currentStreamUrl)
+                setLastFailureReason(error.message)
+
+                val switched = when (recoveryType) {
+                    PlayerRecoveryType.NETWORK,
+                    PlayerRecoveryType.SOURCE,
+                    PlayerRecoveryType.BUFFER_TIMEOUT -> tryNextCatchUpVariantInternal()
+                    else -> false
+                }
+
+                if (switched) {
+                    appendRecoveryAction("Trying alternate catch-up URL")
+                    showPlayerNotice(
+                        message = "Trying another replay path for ${channel.name}.",
+                        recoveryType = PlayerRecoveryType.CATCH_UP,
+                        actions = buildRecoveryActions(PlayerRecoveryType.CATCH_UP),
+                        isRetryNotice = true
+                    )
+                    return@launch
+                }
+
+                showPlayerNotice(
+                    message = resolveCatchUpFailureMessage(
+                        channel = channel,
+                        archiveRequested = true,
+                        programHasArchive = _currentProgram.value?.hasArchive == true
+                    ),
+                    recoveryType = PlayerRecoveryType.CATCH_UP,
+                    actions = buildRecoveryActions(PlayerRecoveryType.CATCH_UP)
+                )
+                return@launch
+            }
+
             markStreamFailure(currentStreamUrl)
             setLastFailureReason(error.message)
             logRepositoryFailure(
@@ -324,7 +368,8 @@ class PlayerViewModel @Inject constructor(
                 showPlayerNotice(
                     message = "Trying an alternate stream for ${channel.name}.",
                     recoveryType = recoveryType,
-                    actions = buildRecoveryActions(recoveryType)
+                    actions = buildRecoveryActions(recoveryType),
+                    isRetryNotice = true
                 )
                 return@launch
             }
@@ -595,6 +640,11 @@ class PlayerViewModel @Inject constructor(
         archiveEndMs: Long? = null,
         archiveTitle: String? = null
     ) {
+        val hasArchiveRequest = archiveStartMs != null &&
+            archiveEndMs != null &&
+            archiveStartMs > 0L &&
+            archiveEndMs > archiveStartMs &&
+            try { ContentType.valueOf(contentType) } catch (e: Exception) { ContentType.LIVE } == ContentType.LIVE
         val requestVersion = ++prepareRequestVersion
         val previousProviderId = currentProviderId
         val previousCategoryId = currentCategoryId
@@ -608,7 +658,10 @@ class PlayerViewModel @Inject constructor(
         currentArtworkUrl = artworkUrl
         currentContentType = try { ContentType.valueOf(contentType) } catch (e: Exception) { ContentType.LIVE }
         currentProviderId = providerId
-        currentStreamClassLabel = if (archiveStartMs != null && archiveEndMs != null) "Catch-up" else "Primary"
+        currentStreamClassLabel = if (hasArchiveRequest) "Catch-up" else "Primary"
+        if (!hasArchiveRequest) {
+            pendingCatchUpUrls = emptyList()
+        }
         if (currentContentType != ContentType.LIVE) {
             lastRecordedLivePlaybackKey = null
             recentChannelsJob?.cancel()
@@ -623,21 +676,25 @@ class PlayerViewModel @Inject constructor(
         
         // Reset tried streams for manual switch
         triedAlternativeStreams.clear()
-        triedAlternativeStreams.add(streamUrl)
+        if (!hasArchiveRequest) {
+            triedAlternativeStreams.add(streamUrl)
+        }
 
-        viewModelScope.launch {
-            val resolvedUrl = resolvePlaybackUrl(streamUrl, internalChannelId, providerId, currentContentType)
-            if (requestVersion != prepareRequestVersion) return@launch
-            if (resolvedUrl.isNullOrBlank()) {
-                showPlayerNotice(message = "No playable stream URL was available.", recoveryType = PlayerRecoveryType.SOURCE)
-                return@launch
+        if (!hasArchiveRequest) {
+            viewModelScope.launch {
+                val resolvedUrl = resolvePlaybackUrl(streamUrl, internalChannelId, providerId, currentContentType)
+                if (requestVersion != prepareRequestVersion) return@launch
+                if (resolvedUrl.isNullOrBlank()) {
+                    showPlayerNotice(message = "No playable stream URL was available.", recoveryType = PlayerRecoveryType.SOURCE)
+                    return@launch
+                }
+                val streamInfo = com.streamvault.domain.model.StreamInfo(
+                    url = resolvedUrl,
+                    title = currentTitle,
+                    streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+                )
+                preparePlayer(streamInfo)
             }
-            val streamInfo = com.streamvault.domain.model.StreamInfo(
-                url = resolvedUrl,
-                title = currentTitle,
-                streamType = com.streamvault.domain.model.StreamType.UNKNOWN
-            )
-            preparePlayer(streamInfo)
         }
         
         // Show context info on entry for both Live and VOD
@@ -692,16 +749,10 @@ class PlayerViewModel @Inject constructor(
             }
         }
 
-        if (
-            currentContentType == ContentType.LIVE &&
-            archiveStartMs != null &&
-            archiveEndMs != null &&
-            archiveStartMs > 0L &&
-            archiveEndMs > archiveStartMs
-        ) {
+        if (currentContentType == ContentType.LIVE && hasArchiveRequest) {
             viewModelScope.launch {
-                val catchUpUrl = try {
-                    providerRepository.buildCatchUpUrl(
+                val catchUpUrls = try {
+                    providerRepository.buildCatchUpUrls(
                         providerId = currentProviderId,
                         streamId = currentContentId,
                         start = archiveStartMs / 1000L,
@@ -715,19 +766,12 @@ class PlayerViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                if (catchUpUrl != null) {
-                    currentTitle = archiveTitle?.takeIf { it.isNotBlank() } ?: currentTitle
-                    currentStreamUrl = catchUpUrl
-                    updateStreamClass("Catch-up")
-                    appendRecoveryAction("Opened catch-up stream")
-                    val catchupStream = com.streamvault.domain.model.StreamInfo(
-                        url = catchUpUrl,
-                        title = currentTitle,
-                        streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+                if (catchUpUrls.isNotEmpty()) {
+                    startCatchUpPlayback(
+                        urls = catchUpUrls,
+                        title = archiveTitle?.takeIf { it.isNotBlank() } ?: currentTitle,
+                        recoveryAction = "Opened catch-up stream"
                     )
-                    preparePlayer(catchupStream)
-                    playerEngine.play()
-                    _showControls.value = true
                 } else {
                     val reason = resolveCatchUpFailureMessage(_currentChannel.value, archiveRequested = true, programHasArchive = true)
                     setLastFailureReason(reason)
@@ -777,6 +821,7 @@ class PlayerViewModel @Inject constructor(
                     )
                     if (currentContentType == ContentType.LIVE) {
                         recordLivePlayback(channel)
+                        fetchEpg(currentProviderId, channel.epgChannelId, channel.streamId)
                     }
                     updateChannelDiagnostics(channel)
                 }
@@ -902,33 +947,74 @@ class PlayerViewModel @Inject constructor(
         )
     }
 
-    private fun fetchEpg(providerId: Long, epgChannelId: String?) {
+    private fun fetchEpg(providerId: Long, epgChannelId: String?, streamId: Long = 0L) {
         epgJob?.cancel()
-        if (providerId > 0 && epgChannelId != null) {
+        remoteEpgFallbackJob?.cancel()
+        if (providerId > 0 && (epgChannelId != null || streamId > 0L)) {
             epgJob = viewModelScope.launch {
-                launch {
-                    epgRepository.getNowAndNext(providerId, epgChannelId).collect { (now, next) ->
-                        _currentProgram.value = now
-                        _nextProgram.value = next
+                if (epgChannelId != null) {
+                    launch {
+                        epgRepository.getNowAndNext(providerId, epgChannelId).collect { (now, next) ->
+                            _currentProgram.value = now
+                            _nextProgram.value = next
+                        }
+                    }
+                    launch {
+                        // Fetch last 24 hours.
+                        val now = System.currentTimeMillis()
+                        val start = now - (24 * 60 * 60 * 1000L)
+                        epgRepository.getProgramsForChannel(providerId, epgChannelId, start, now).collect { programs ->
+                            val catchUpSupported = _currentChannel.value?.catchUpSupported == true
+                            _programHistory.value = programs
+                                .filter { it.hasArchive || catchUpSupported }
+                                .sortedByDescending { it.startTime }
+                        }
+                    }
+                    launch {
+                        // Fetch next 6 hours.
+                        val now = System.currentTimeMillis()
+                        val end = now + (6 * 60 * 60 * 1000L)
+                        epgRepository.getProgramsForChannel(providerId, epgChannelId, now, end).collect { programs ->
+                            _upcomingPrograms.value = programs.sortedBy { it.startTime }
+                        }
                     }
                 }
-                launch {
-                    // Fetch last 24 hours.
-                    val now = System.currentTimeMillis()
-                    val start = now - (24 * 60 * 60 * 1000L)
-                    epgRepository.getProgramsForChannel(providerId, epgChannelId, start, now).collect { programs ->
-                        _programHistory.value = programs
-                            .filter { it.hasArchive }
-                            .sortedByDescending { it.startTime }
+            }
+            if (streamId > 0L) {
+                remoteEpgFallbackJob = viewModelScope.launch {
+                    delay(250)
+                    if (
+                        _currentProgram.value != null ||
+                        _nextProgram.value != null ||
+                        _programHistory.value.isNotEmpty() ||
+                        _upcomingPrograms.value.isNotEmpty()
+                    ) {
+                        return@launch
                     }
-                }
-                launch {
-                    // Fetch next 6 hours.
-                    val now = System.currentTimeMillis()
-                    val end = now + (6 * 60 * 60 * 1000L)
-                    epgRepository.getProgramsForChannel(providerId, epgChannelId, now, end).collect { programs ->
-                        _upcomingPrograms.value = programs.sortedBy { it.startTime }
+
+                    val result = providerRepository.getProgramsForLiveStream(
+                        providerId = providerId,
+                        streamId = streamId,
+                        epgChannelId = epgChannelId,
+                        limit = 12
+                    )
+                    val programs = (result as? com.streamvault.domain.model.Result.Success)?.data
+                        ?.sortedBy { it.startTime }
+                        .orEmpty()
+                    if (programs.isEmpty()) {
+                        return@launch
                     }
+
+                    val now = System.currentTimeMillis()
+                    val catchUpSupported = _currentChannel.value?.catchUpSupported == true
+                    _currentProgram.value = programs.firstOrNull { it.startTime <= now && it.endTime > now }
+                    _nextProgram.value = programs.firstOrNull { it.startTime > now }
+                    _programHistory.value = programs
+                        .filter { it.endTime <= now && (it.hasArchive || catchUpSupported) }
+                        .sortedByDescending { it.startTime }
+                    _upcomingPrograms.value = programs
+                        .filter { it.endTime > now || it == _currentProgram.value }
+                        .sortedBy { it.startTime }
                 }
             }
         } else {
@@ -1198,6 +1284,7 @@ class PlayerViewModel @Inject constructor(
         currentContentId = channel.id
         currentTitle = channel.name
         currentStreamUrl = channel.streamUrl
+        pendingCatchUpUrls = emptyList()
         updateStreamClass("Primary")
         _currentChannel.value = channel
         refreshCurrentChannelRecording()
@@ -1228,7 +1315,7 @@ class PlayerViewModel @Inject constructor(
         // Pre-warm the next channel in sequence so the subsequent zap is near-instant
         preloadAdjacentChannel(index)
         
-        fetchEpg(currentProviderId, channel.epgChannelId)
+        fetchEpg(currentProviderId, channel.epgChannelId, channel.streamId)
         
         // Show bottom live info overlay
         _showZapOverlay.value = false
@@ -1312,11 +1399,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun resolvePlaybackErrorMessage(error: PlayerError): String = when (classifyPlaybackError(error)) {
-        PlayerRecoveryType.NETWORK -> "The stream stopped responding. Check the network or try another source."
-        PlayerRecoveryType.SOURCE -> "This stream is unavailable from the provider right now."
+        PlayerRecoveryType.NETWORK -> "The stream stopped responding after retries. Check the network or try another source."
+        PlayerRecoveryType.SOURCE -> "This stream failed after retries on the available paths."
         PlayerRecoveryType.DECODER -> "Playback failed in the current decoder path."
         PlayerRecoveryType.DRM -> "Playback requires valid DRM credentials or a supported device security level."
-        PlayerRecoveryType.BUFFER_TIMEOUT -> "Playback stalled for too long on this stream."
+        PlayerRecoveryType.BUFFER_TIMEOUT -> "Playback stalled for too long after retries on this stream."
         PlayerRecoveryType.CATCH_UP -> "Replay is unavailable for the selected program."
         PlayerRecoveryType.UNKNOWN -> error.message.ifBlank { "Playback failed for an unknown reason." }
     }
@@ -1350,8 +1437,10 @@ class PlayerViewModel @Inject constructor(
 
     private fun updateChannelDiagnostics(channel: com.streamvault.domain.model.Channel) {
         val archiveLabel = when {
-            channel.catchUpSupported && channel.catchUpSource.isNullOrBlank() -> "Provider advertises catch-up, but replay metadata is incomplete."
-            channel.catchUpSupported -> "Catch-up supported (${channel.catchUpDays} days)"
+            channel.catchUpSupported && (channel.streamId > 0L || !channel.catchUpSource.isNullOrBlank()) ->
+                "Catch-up supported (${channel.catchUpDays} days)"
+            channel.catchUpSupported ->
+                "Provider advertises catch-up, but replay metadata is incomplete."
             else -> "No archive support advertised"
         }
         val hints = buildList {
@@ -1361,7 +1450,7 @@ class PlayerViewModel @Inject constructor(
             if (channel.alternativeStreams.isNotEmpty()) {
                 add("${channel.alternativeStreams.size} alternate stream path(s) available.")
             }
-            if (channel.catchUpSupported && channel.catchUpSource.isNullOrBlank()) {
+            if (channel.catchUpSupported && channel.streamId <= 0L && channel.catchUpSource.isNullOrBlank()) {
                 add("Replay may fail because this provider did not expose a catch-up template.")
             }
         }
@@ -1387,6 +1476,13 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun hasAlternateStream(): Boolean {
+        if (isCatchUpPlayback()) {
+            return pendingCatchUpUrls.any { altUrl ->
+                altUrl != currentStreamUrl &&
+                    altUrl !in triedAlternativeStreams &&
+                    (failedStreamsThisSession[altUrl] ?: 0) == 0
+            }
+        }
         val channel = _currentChannel.value ?: return false
         return channel.alternativeStreams.any { altUrl ->
             altUrl != currentStreamUrl &&
@@ -1396,6 +1492,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun tryAlternateStream(): Boolean {
+        if (isCatchUpPlayback()) {
+            return tryNextCatchUpVariantInternal()
+        }
         val channel = _currentChannel.value ?: return false
         return tryAlternateStreamInternal(channel)
     }
@@ -1414,6 +1513,37 @@ class PlayerViewModel @Inject constructor(
         updateStreamClass("Alternate")
         viewModelScope.launch {
             val resolvedUrl = resolvePlaybackUrl(nextStream, channel.id, channel.providerId, ContentType.LIVE)
+                ?: return@launch
+            val streamInfo = com.streamvault.domain.model.StreamInfo(
+                url = resolvedUrl,
+                title = currentTitle,
+                streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+            )
+            preparePlayer(streamInfo)
+            playerEngine.play()
+        }
+        return true
+    }
+
+    private fun isCatchUpPlayback(): Boolean = currentStreamClassLabel == "Catch-up"
+
+    private fun nextCatchUpVariant(): String? {
+        return pendingCatchUpUrls.firstOrNull { altUrl ->
+            altUrl != currentStreamUrl &&
+                altUrl !in triedAlternativeStreams &&
+                (failedStreamsThisSession[altUrl] ?: 0) == 0
+        } ?: pendingCatchUpUrls.firstOrNull { altUrl ->
+            altUrl != currentStreamUrl && altUrl !in triedAlternativeStreams
+        }
+    }
+
+    private fun tryNextCatchUpVariantInternal(): Boolean {
+        val nextStream = nextCatchUpVariant() ?: return false
+        triedAlternativeStreams.add(nextStream)
+        currentStreamUrl = nextStream
+        updateStreamClass("Catch-up")
+        viewModelScope.launch {
+            val resolvedUrl = resolvePlaybackUrl(nextStream, currentContentId, currentProviderId, ContentType.LIVE)
                 ?: return@launch
             val streamInfo = com.streamvault.domain.model.StreamInfo(
                 url = resolvedUrl,
@@ -1533,6 +1663,37 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private suspend fun startCatchUpPlayback(
+        urls: List<String>,
+        title: String,
+        recoveryAction: String
+    ) {
+        val candidates = urls
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+        val primaryUrl = candidates.firstOrNull() ?: return
+
+        currentTitle = title
+        pendingCatchUpUrls = candidates
+        triedAlternativeStreams.clear()
+        triedAlternativeStreams.add(primaryUrl)
+        currentStreamUrl = primaryUrl
+        updateStreamClass("Catch-up")
+        appendRecoveryAction(recoveryAction)
+
+        val catchupStream = com.streamvault.domain.model.StreamInfo(
+            url = primaryUrl,
+            title = currentTitle,
+            streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+        )
+        preparePlayer(catchupStream)
+        playerEngine.play()
+        _showControls.value = true
+    }
+
     fun playCatchUp(program: Program) {
         viewModelScope.launch {
             val start = program.startTime / 1000L
@@ -1550,8 +1711,8 @@ class PlayerViewModel @Inject constructor(
                 return@launch
             }
 
-            val catchUpUrl = try {
-                providerRepository.buildCatchUpUrl(providerId, streamId, start, end)
+            val catchUpUrls = try {
+                providerRepository.buildCatchUpUrls(providerId, streamId, start, end)
             } catch (e: CredentialDecryptionException) {
                 setLastFailureReason(e.message ?: CredentialDecryptionException.MESSAGE)
                 showPlayerNotice(
@@ -1561,21 +1722,12 @@ class PlayerViewModel @Inject constructor(
                 )
                 return@launch
             }
-            if (catchUpUrl != null) {
-                // Update metadata for player
-                currentTitle = "${_currentChannel.value?.name ?: ""}: ${program.title}"
-                currentStreamUrl = catchUpUrl
-                updateStreamClass("Catch-up")
-                appendRecoveryAction("Started program replay")
-                
-                val streamInfo = com.streamvault.domain.model.StreamInfo(
-                    url = catchUpUrl,
-                    title = currentTitle,
-                    streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+            if (catchUpUrls.isNotEmpty()) {
+                startCatchUpPlayback(
+                    urls = catchUpUrls,
+                    title = "${_currentChannel.value?.name ?: ""}: ${program.title}",
+                    recoveryAction = "Started program replay"
                 )
-                preparePlayer(streamInfo)
-                playerEngine.play()
-                _showControls.value = true
             } else {
                 val reason = resolveCatchUpFailureMessage(_currentChannel.value, archiveRequested = true, programHasArchive = program.hasArchive)
                 setLastFailureReason(reason)
@@ -1599,12 +1751,10 @@ class PlayerViewModel @Inject constructor(
         return when {
             !channel.catchUpSupported && !programHasArchive ->
                 "This channel does not advertise archive support on the current provider."
-            channel.catchUpSupported && channel.catchUpSource.isNullOrBlank() ->
-                "The provider marks this channel as catch-up capable, but no replay template was supplied."
-            channel.streamId <= 0L ->
-                "The provider did not expose a replay stream identifier for this channel."
+            channel.streamId <= 0L && channel.catchUpSource.isNullOrBlank() ->
+                "The provider advertises catch-up, but did not expose replay metadata for this channel."
             else ->
-                "The provider did not return a replay stream for the selected program."
+                "Replay is unavailable for the selected program right now."
         }
     }
 
@@ -1692,6 +1842,12 @@ class PlayerViewModel @Inject constructor(
         _playerNotice.value = null
     }
 
+    private fun dismissRetryNoticeIfPresent() {
+        if (_playerNotice.value?.isRetryNotice == true) {
+            dismissPlayerNotice()
+        }
+    }
+
     fun runPlayerNoticeAction(action: PlayerNoticeAction) {
         when (action) {
             PlayerNoticeAction.RETRY -> {
@@ -1718,19 +1874,41 @@ class PlayerViewModel @Inject constructor(
         message: String,
         recoveryType: PlayerRecoveryType = PlayerRecoveryType.UNKNOWN,
         actions: List<PlayerNoticeAction> = emptyList(),
-        durationMs: Long = if (actions.isNotEmpty()) 8000L else 3600L
+        durationMs: Long = if (actions.isNotEmpty()) 8000L else 3600L,
+        isRetryNotice: Boolean = false
     ) {
         playerNoticeHideJob?.cancel()
         _playerNotice.value = PlayerNoticeState(
             message = message,
             recoveryType = recoveryType,
-            actions = actions.distinct()
+            actions = actions.distinct(),
+            isRetryNotice = isRetryNotice
         )
         playerNoticeHideJob = viewModelScope.launch {
             delay(durationMs)
             if (_playerNotice.value?.message == message) {
                 _playerNotice.value = null
             }
+        }
+    }
+
+    private fun showRetryNotice(status: com.streamvault.player.PlayerRetryStatus) {
+        val formatLabel = currentPlaybackFormatLabel()
+        val message = "Retrying $formatLabel ${status.attempt}/${status.maxAttempts} in ${status.delayMs / 1000}s..."
+        showPlayerNotice(
+            message = message,
+            recoveryType = PlayerRecoveryType.NETWORK,
+            durationMs = status.delayMs + 1500L,
+            isRetryNotice = true
+        )
+    }
+
+    private fun currentPlaybackFormatLabel(): String {
+        val url = currentResolvedPlaybackUrl.ifBlank { currentStreamUrl }.lowercase(Locale.ROOT)
+        return when {
+            url.contains("ext=m3u8") || url.endsWith(".m3u8") -> "HLS"
+            url.contains("ext=ts") || url.endsWith(".ts") -> "TS"
+            else -> "stream"
         }
     }
 
@@ -1800,6 +1978,20 @@ class PlayerViewModel @Inject constructor(
     }
     
     fun retryStream(streamUrl: String, epgChannelId: String?) {
+        if (isCatchUpPlayback()) {
+            viewModelScope.launch {
+                val resolvedUrl = resolvePlaybackUrl(streamUrl, currentContentId, currentProviderId, currentContentType)
+                    ?: return@launch
+                val streamInfo = com.streamvault.domain.model.StreamInfo(
+                    url = resolvedUrl,
+                    title = currentTitle,
+                    streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+                )
+                preparePlayer(streamInfo)
+                playerEngine.play()
+            }
+            return
+        }
         val currentId = if (currentChannelIndex != -1 && channelList.isNotEmpty()) channelList[currentChannelIndex].id else -1L
         prepare(streamUrl, epgChannelId, currentId, currentCategoryId, currentProviderId, isVirtualCategory, currentContentType.name, currentTitle)
     }
@@ -1941,6 +2133,7 @@ class PlayerViewModel @Inject constructor(
         numericInputFeedbackJob?.cancel()
         playerNoticeHideJob?.cancel()
         epgJob?.cancel()
+        remoteEpgFallbackJob?.cancel()
         playlistJob?.cancel()
         controlsHideJob?.cancel()
         zapOverlayJob?.cancel()

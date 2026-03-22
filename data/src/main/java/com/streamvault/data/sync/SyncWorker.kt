@@ -1,6 +1,7 @@
 package com.streamvault.data.sync
 
 import android.content.Context
+import android.database.sqlite.SQLiteException
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -35,7 +36,16 @@ class SyncWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "Failed to run data maintenance", e)
-            Result.retry()
+            if (shouldRetry(e)) Result.retry() else Result.failure()
+        }
+    }
+
+    private fun shouldRetry(error: Throwable): Boolean {
+        return when (error) {
+            is java.io.IOException -> true
+            is SQLiteException -> error.message.orEmpty().contains("locked", ignoreCase = true) ||
+                error.message.orEmpty().contains("busy", ignoreCase = true)
+            else -> false
         }
     }
 }

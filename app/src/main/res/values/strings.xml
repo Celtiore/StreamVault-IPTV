@@ -565,7 +565,7 @@
     <string name="player_error_back">Or press Back to return</string>
     <string name="player_error_live_hint">Retry, jump back to the last channel, or press Back to leave playback.</string>
     <string name="player_channel_list_hint">Select a channel to tune instantly. Back closes the list.</string>
-    <string name="player_epg_overlay_hint">Browse upcoming programs here. Select an archive-ready item to start catch-up.</string>
+    <string name="player_epg_overlay_hint">Browse guide details here. Select the catch-up pill to open archive history.</string>
     <string name="player_type_movie">Movie</string>
     <string name="player_type_series">Series</string>
     <string name="player_close">Close</string>
@@ -781,6 +781,17 @@
     <string name="series_seasons">Seasons</string>
     <string name="series_episodes">Episodes (%1$d)</string>
     <string name="series_unwatched_badge">%1$d left to finish</string>
+    <string name="movie_loading_details">Loading details...</string>
+    <string name="movie_not_found">Movie not found</string>
+    <string name="movie_detail_back">Back to library</string>
+    <string name="movie_detail_play">Play</string>
+    <string name="movie_plot_fallback">No plot available</string>
+    <string name="movie_detail_director">Directed By:</string>
+    <string name="movie_detail_release_date">Release Date:</string>
+    <string name="movie_detail_duration">Duration:</string>
+    <string name="movie_detail_genre">Genre:</string>
+    <string name="movie_detail_cast">Cast:</string>
+    <string name="movie_detail_unknown">Unknown</string>
     <string name="epg_now_playing">Now Playing</string>
     <string name="epg_no_data">No EPG data</string>
     <string name="epg_up_next">Up Next</string>

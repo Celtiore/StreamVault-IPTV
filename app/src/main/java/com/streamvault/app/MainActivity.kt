@@ -95,7 +95,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         _pictureInPictureModeFlow.value = isInPictureInPictureMode
         handleExternalIntent(intent)
-        castManager.ensureInitialized()
         if (isTelevisionDevice()) {
             lifecycleScope.launch {
                 watchNextManager.refreshWatchNext()

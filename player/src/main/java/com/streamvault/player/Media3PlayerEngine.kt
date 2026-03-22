@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.graphics.Color as AndroidColor
 import android.view.LayoutInflater
 import android.view.View
@@ -22,6 +23,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.ScrubbingModeParameters
+import androidx.media3.exoplayer.DefaultLivePlaybackSpeedControl
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
@@ -151,9 +153,12 @@ class Media3PlayerEngine @Inject constructor(
     companion object {
         private const val TAG = "Media3PlayerEngine"
         private const val MAX_RETRIES = 3
-        private const val RETRY_BASE_DELAY_MS = 2000L
+        private const val RETRY_BASE_DELAY_MS = 3000L
         private const val BANDWIDTH_STATS_MIN_INTERVAL_MS = 1500L
         private const val BUFFERED_DURATION_PUBLISH_STEP_MS = 1000L
+        private const val PLAYBACK_CONNECT_TIMEOUT_SECONDS = 15L
+        private const val PLAYBACK_READ_TIMEOUT_SECONDS = 30L
+        private const val PLAYBACK_WRITE_TIMEOUT_SECONDS = 30L
     }
 
     private val _playbackState = MutableStateFlow(PlaybackState.IDLE)
@@ -173,6 +178,9 @@ class Media3PlayerEngine @Inject constructor(
 
     private val _error = MutableSharedFlow<PlayerError?>(replay = 1)
     override val error: Flow<PlayerError?> = _error.asSharedFlow()
+
+    private val _retryStatus = MutableStateFlow<PlayerRetryStatus?>(null)
+    override val retryStatus: StateFlow<PlayerRetryStatus?> = _retryStatus.asStateFlow()
 
     private val _availableAudioTracks = MutableStateFlow<List<PlayerTrack>>(emptyList())
     override val availableAudioTracks: StateFlow<List<PlayerTrack>> = _availableAudioTracks.asStateFlow()
@@ -235,49 +243,49 @@ class Media3PlayerEngine @Inject constructor(
     }
 
     private fun createPlayer(): ExoPlayer {
-        // Custom renderers factory that disables video decoder reuse.
-        // The emulator's goldfish H264 decoder (and some real HW decoders) produce
-        // zoom/crop artefacts when the codec is reused with a flush during ABR
-        // bitrate switches.  By returning REUSE_RESULT_NO the player creates a
-        // fresh decoder for every track switch, which is slightly heavier but
-        // eliminates the glitch entirely.
-        val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun buildVideoRenderers(
-                context: Context,
-                extensionRendererMode: Int,
-                mediaCodecSelector: MediaCodecSelector,
-                enableDecoderFallback: Boolean,
-                eventHandler: Handler,
-                eventListener: VideoRendererEventListener,
-                allowedVideoJoiningTimeMs: Long,
-                out: ArrayList<Renderer>
-            ) {
-                out.add(object : MediaCodecVideoRenderer(
-                    context,
-                    mediaCodecSelector,
-                    allowedVideoJoiningTimeMs,
-                    enableDecoderFallback,
-                    eventHandler,
-                    eventListener,
-                    50 // MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
+        val renderersFactory = (if (shouldDisableVideoDecoderReuseWorkaround()) {
+            // Some emulator-style decoders still misbehave during ABR reuse. Keep the
+            // workaround there, but let real devices reuse decoders for smoother playback.
+            object : DefaultRenderersFactory(context) {
+                override fun buildVideoRenderers(
+                    context: Context,
+                    extensionRendererMode: Int,
+                    mediaCodecSelector: MediaCodecSelector,
+                    enableDecoderFallback: Boolean,
+                    eventHandler: Handler,
+                    eventListener: VideoRendererEventListener,
+                    allowedVideoJoiningTimeMs: Long,
+                    out: ArrayList<Renderer>
                 ) {
-                    override fun canReuseCodec(
-                        codecInfo: MediaCodecInfo,
-                        oldFormat: Format,
-                        newFormat: Format
-                    ): DecoderReuseEvaluation {
-                        Log.w(TAG, "DECODER_NO_REUSE: ${oldFormat.width}x${oldFormat.height}@${oldFormat.bitrate} -> ${newFormat.width}x${newFormat.height}@${newFormat.bitrate}")
-                        return DecoderReuseEvaluation(
-                            codecInfo.name,
-                            oldFormat,
-                            newFormat,
-                            DecoderReuseEvaluation.REUSE_RESULT_NO,
-                            DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED
-                        )
-                    }
-                })
+                    out.add(object : MediaCodecVideoRenderer(
+                        context,
+                        mediaCodecSelector,
+                        allowedVideoJoiningTimeMs,
+                        enableDecoderFallback,
+                        eventHandler,
+                        eventListener,
+                        50 // MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
+                    ) {
+                        override fun canReuseCodec(
+                            codecInfo: MediaCodecInfo,
+                            oldFormat: Format,
+                            newFormat: Format
+                        ): DecoderReuseEvaluation {
+                            Log.w(TAG, "DECODER_NO_REUSE: ${oldFormat.width}x${oldFormat.height}@${oldFormat.bitrate} -> ${newFormat.width}x${newFormat.height}@${newFormat.bitrate}")
+                            return DecoderReuseEvaluation(
+                                codecInfo.name,
+                                oldFormat,
+                                newFormat,
+                                DecoderReuseEvaluation.REUSE_RESULT_NO,
+                                DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED
+                            )
+                        }
+                    })
+                }
             }
-        }.apply {
+        } else {
+            DefaultRenderersFactory(context)
+        }).apply {
             setExtensionRendererMode(
                 when (currentDecoderMode) {
                     DecoderMode.AUTO -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
@@ -287,16 +295,23 @@ class Media3PlayerEngine @Inject constructor(
             )
         }
 
-        // Tuned for IPTV live streams: aggressive start with comfortable cruise buffer.
-        // Low buffer-for-playback gets the first frame on screen sooner during channel zapping.
+        // Slightly longer live buffers trade a bit of zap speed for better stability on
+        // inconsistent IPTV segments, which reduces stutter and audio underruns.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                15_000, // min buffer – keep smaller so the player starts faster
-                60_000, // max buffer – comfortable cruise; avoids OOM on 100k playlists
-                500,    // buffer for playback – half-second is enough for key-frame start
-                2500    // buffer for rebuffering – recover quickly on network hiccup
+                30_000,
+                90_000,
+                2_500,
+                10_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        // Some live IPTV manifests drift around the live edge. Keeping live-speed correction
+        // pinned at 1.0x avoids pitchy/crackly audio from subtle speed hunting.
+        val livePlaybackSpeedControl = DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMinPlaybackSpeed(1.0f)
+            .setFallbackMaxPlaybackSpeed(1.0f)
             .build()
 
         val trackSelector = androidx.media3.exoplayer.trackselection.DefaultTrackSelector(context).apply {
@@ -310,6 +325,7 @@ class Media3PlayerEngine @Inject constructor(
         return ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
+            .setLivePlaybackSpeedControl(livePlaybackSpeedControl)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .setAudioAttributes(
@@ -408,6 +424,9 @@ class Media3PlayerEngine @Inject constructor(
                             else -> PlaybackState.IDLE
                         }
                         _playbackState.value = newState
+                        if (newState == PlaybackState.READY) {
+                            _retryStatus.value = null
+                        }
                     }
 
                     override fun onIsPlayingChanged(playing: Boolean) {
@@ -447,10 +466,16 @@ class Media3PlayerEngine @Inject constructor(
                             Log.w(TAG, "Recoverable error (attempt $retryCount/$MAX_RETRIES), retrying...")
                             val streamInfoSnapshot = lastStreamInfo
                             _playerStats.update { it.copy(droppedFrames = 0) }
+                            _retryStatus.value = PlayerRetryStatus(
+                                attempt = retryCount,
+                                maxAttempts = MAX_RETRIES,
+                                delayMs = RETRY_BASE_DELAY_MS
+                            )
                             handler.postDelayed({
                                 streamInfoSnapshot?.let { prepare(it) }
-                            }, retryCount * RETRY_BASE_DELAY_MS)
+                            }, RETRY_BASE_DELAY_MS)
                         } else {
+                            _retryStatus.value = null
                             _error.tryEmit(PlayerError.fromException(error))
                             _playbackState.value = PlaybackState.ERROR
                         }
@@ -537,6 +562,7 @@ class Media3PlayerEngine @Inject constructor(
     override fun prepare(streamInfo: StreamInfo) {
         lastStreamInfo = streamInfo
         retryCount = 0
+        _retryStatus.value = null
         lastFrameRate = 0f
         lastBandwidthStatsUpdateMs = 0L
         lastVideoWidth = 0
@@ -596,8 +622,9 @@ class Media3PlayerEngine @Inject constructor(
         }
 
         val timeoutClient = okHttpClient.newBuilder()
-            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(PLAYBACK_CONNECT_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(PLAYBACK_READ_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(PLAYBACK_WRITE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .build()
 
         return if (headers.isNotEmpty()) {
@@ -931,6 +958,7 @@ class Media3PlayerEngine @Inject constructor(
         exoPlayer?.release()
         exoPlayer = null
         lastStreamInfo = null
+        _retryStatus.value = null
         supervisorJob.cancel()
         supervisorJob = SupervisorJob()
         scope = CoroutineScope(Dispatchers.Main + supervisorJob)
@@ -1072,6 +1100,17 @@ class Media3PlayerEngine @Inject constructor(
 
     private fun shouldPublishBufferedDuration(currentDurationMs: Long, newDurationMs: Long): Boolean {
         return currentDurationMs == 0L || newDurationMs == 0L || abs(newDurationMs - currentDurationMs) >= BUFFERED_DURATION_PUBLISH_STEP_MS
+    }
+
+    private fun shouldDisableVideoDecoderReuseWorkaround(): Boolean {
+        val fingerprint = Build.FINGERPRINT.lowercase(Locale.ROOT)
+        val hardware = Build.HARDWARE.lowercase(Locale.ROOT)
+        val model = Build.MODEL.lowercase(Locale.ROOT)
+        return fingerprint.contains("generic") ||
+            fingerprint.contains("emulator") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            model.contains("android sdk built for")
     }
 
     private fun stopPolling() {

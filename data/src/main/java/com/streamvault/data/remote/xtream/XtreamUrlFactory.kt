@@ -32,6 +32,10 @@ object XtreamUrlFactory {
         """(https?://[^\s/]+(?:/[^\s/?#]+)*)/timeshift/[^/\s?]+/[^/\s?]+(/[^\s?#]*)?""",
         RegexOption.IGNORE_CASE
     )
+    private val timeshiftsPathRegex = Regex(
+        """(https?://[^\s/]+(?:/[^\s/?#]+)*)/timeshifts/[^/\s?]+/[^/\s?]+(/[^\s?#]*)?""",
+        RegexOption.IGNORE_CASE
+    )
 
     fun buildPlayerApiUrl(
         serverUrl: String,
@@ -88,14 +92,144 @@ object XtreamUrlFactory {
         password: String,
         durationMinutes: Long,
         formattedStart: String,
-        streamId: Long
+        streamId: Long,
+        containerExtension: String? = null
     ): String {
+        val ext = normalizeContainerExtension(containerExtension) ?: "ts"
         return serverUrl.trimEnd('/') + "/timeshift/" +
             encodePathSegment(username) + "/" +
             encodePathSegment(password) + "/" +
             encodePathSegment(durationMinutes.toString()) + "/" +
             encodePathSegment(formattedStart) + "/" +
-            encodePathSegment(streamId.toString()) + ".ts"
+            encodePathSegment(streamId.toString()) + "." + encodePathSegment(ext)
+    }
+
+    fun buildCatchUpShiftUrl(
+        serverUrl: String,
+        username: String,
+        password: String,
+        durationMinutes: Long,
+        formattedStart: String,
+        streamId: Long,
+        containerExtension: String? = null
+    ): String {
+        val ext = normalizeContainerExtension(containerExtension) ?: "ts"
+        return serverUrl.trimEnd('/') + "/timeshifts/" +
+            encodePathSegment(username) + "/" +
+            encodePathSegment(password) + "/" +
+            encodePathSegment(durationMinutes.toString()) + "/" +
+            encodePathSegment(streamId.toString()) + "/" +
+            encodePathSegment(formattedStart) + "." + encodePathSegment(ext)
+    }
+
+    fun buildCatchUpPhpUrl(
+        serverUrl: String,
+        username: String,
+        password: String,
+        durationMinutes: Long,
+        formattedStart: String,
+        streamId: Long,
+        containerExtension: String? = null,
+        includeExtension: Boolean = true,
+        path: String = "streaming/timeshift.php"
+    ): String {
+        val normalizedExtension = normalizeContainerExtension(containerExtension)
+        return buildUrl(
+            serverUrl = serverUrl,
+            path = path,
+            queryParams = buildList {
+                add("username" to username)
+                add("password" to password)
+                add("stream" to streamId.toString())
+                add("start" to formattedStart)
+                add("duration" to durationMinutes.toString())
+                if (includeExtension) {
+                    normalizedExtension?.let { add("extension" to it) }
+                }
+            }
+        )
+    }
+
+    fun buildCatchUpUrls(
+        serverUrl: String,
+        username: String,
+        password: String,
+        durationMinutes: Long,
+        formattedStart: String,
+        streamId: Long,
+        containerExtensions: List<String>
+    ): List<String> {
+        val extensions = containerExtensions
+            .mapNotNull(::normalizeContainerExtension)
+            .ifEmpty { listOf("ts") }
+            .distinct()
+
+        return extensions.flatMap { extension ->
+            listOf(
+                buildCatchUpUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension
+                ),
+                buildCatchUpShiftUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension
+                ),
+                buildCatchUpPhpUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension,
+                    includeExtension = true,
+                    path = "streaming/timeshift.php"
+                ),
+                buildCatchUpPhpUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension,
+                    includeExtension = false,
+                    path = "streaming/timeshift.php"
+                ),
+                buildCatchUpPhpUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension,
+                    includeExtension = true,
+                    path = "timeshift.php"
+                ),
+                buildCatchUpPhpUrl(
+                    serverUrl = serverUrl,
+                    username = username,
+                    password = password,
+                    durationMinutes = durationMinutes,
+                    formattedStart = formattedStart,
+                    streamId = streamId,
+                    containerExtension = extension,
+                    includeExtension = false,
+                    path = "timeshift.php"
+                )
+            )
+        }.distinct()
     }
 
     fun buildInternalStreamUrl(
@@ -170,6 +304,13 @@ object XtreamUrlFactory {
             val suffix = match.groupValues[2]
             "$prefix/timeshift/<redacted>/<redacted>$suffix"
         }
+            .let { redacted ->
+                timeshiftsPathRegex.replace(redacted) { match ->
+                    val prefix = match.groupValues[1]
+                    val suffix = match.groupValues[2]
+                    "$prefix/timeshifts/<redacted>/<redacted>$suffix"
+                }
+            }
     }
 
     private fun parseCredentialedStreamUrl(url: String, providerId: Long): XtreamStreamToken? {

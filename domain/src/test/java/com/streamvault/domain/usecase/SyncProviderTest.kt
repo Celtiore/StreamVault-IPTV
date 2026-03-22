@@ -2,6 +2,7 @@ package com.streamvault.domain.usecase
 
 import com.google.common.truth.Truth.assertThat
 import com.streamvault.domain.manager.ProviderSyncStateReader
+import com.streamvault.domain.model.Program
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.ProviderStatus
 import com.streamvault.domain.model.ProviderType
@@ -125,6 +126,13 @@ private class FakeSyncProviderRepository(
         onProgress?.invoke("Downloading Live TV...")
         return refreshResult
     }
+
+    override suspend fun getProgramsForLiveStream(
+        providerId: Long,
+        streamId: Long,
+        epgChannelId: String?,
+        limit: Int
+    ): Result<List<Program>> = error("Not used in test")
 
     override suspend fun buildCatchUpUrl(providerId: Long, streamId: Long, start: Long, end: Long): String? = null
 }

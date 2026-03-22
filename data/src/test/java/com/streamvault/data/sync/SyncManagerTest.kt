@@ -4,11 +4,13 @@ import com.google.common.truth.Truth.assertThat
 import com.streamvault.data.local.dao.CategoryDao
 import com.streamvault.data.local.dao.ChannelDao
 import com.streamvault.data.local.dao.MovieDao
+import com.streamvault.data.local.dao.ProgramDao
 import com.streamvault.data.local.dao.ProviderDao
 import com.streamvault.data.local.dao.SeriesDao
 import com.streamvault.data.local.entity.ProviderEntity
 import com.streamvault.data.parser.M3uParser
 import com.streamvault.data.remote.xtream.XtreamApiService
+import com.streamvault.data.remote.dto.XtreamStream
 import com.streamvault.domain.model.SyncState
 import com.streamvault.domain.model.Result
 import com.streamvault.domain.model.ProviderType
@@ -28,6 +30,7 @@ import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -97,6 +100,7 @@ class SyncManagerTest {
     private val channelDao: ChannelDao = mock()
     private val movieDao: MovieDao = mock()
     private val seriesDao: SeriesDao = mock()
+    private val programDao: ProgramDao = mock()
     private val categoryDao: CategoryDao = mock()
     private val xtreamApi: XtreamApiService = mock()
     private val epgRepo: EpgRepository = mock()
@@ -118,6 +122,7 @@ class SyncManagerTest {
         channelDao = channelDao,
         movieDao = movieDao,
         seriesDao = seriesDao,
+        programDao = programDao,
         categoryDao = categoryDao,
         xtreamApiService = xtreamApi,
         m3uParser = M3uParser(),
@@ -202,6 +207,41 @@ class SyncManagerTest {
         assertThat(result.isSuccess).isTrue()
         verify(xtreamApi, never()).getLiveCategories(any())
         verify(xtreamApi, never()).getLiveStreams(any())
+    }
+
+    @Test
+    fun `sync_xtream_falls_back_to_movie_categories_from_streams`() = runTest {
+        val mgr = buildManager(providerType = ProviderType.XTREAM_CODES)
+        val now = System.currentTimeMillis()
+        syncMetadataRepo.updateMetadata(
+            SyncMetadata(
+                providerId = 1L,
+                lastLiveSync = now,
+                lastSeriesSync = now,
+                lastEpgSync = now
+            )
+        )
+        whenever(xtreamApi.getVodCategories(any())).thenThrow(RuntimeException("categories unavailable"))
+        whenever(xtreamApi.getVodStreams(any())).thenReturn(
+            listOf(
+                XtreamStream(
+                    name = "Movie One",
+                    streamId = 101,
+                    categoryId = "vod-action",
+                    categoryName = "Action",
+                    containerExtension = "mp4"
+                )
+            )
+        )
+
+        val result = mgr.sync(1L, force = false)
+
+        assertThat(result.isSuccess).isTrue()
+        val categoriesCaptor = argumentCaptor<List<com.streamvault.data.local.entity.CategoryEntity>>()
+        verify(categoryDao).replaceAll(eq(1L), eq("MOVIE"), categoriesCaptor.capture())
+        assertThat(categoriesCaptor.firstValue).hasSize(1)
+        assertThat(categoriesCaptor.firstValue.first().name).isEqualTo("Action")
+        assertThat(categoriesCaptor.firstValue.first().categoryId).isGreaterThan(0L)
     }
 
     @Test

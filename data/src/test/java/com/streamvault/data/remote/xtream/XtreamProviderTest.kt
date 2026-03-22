@@ -40,6 +40,29 @@ class XtreamProviderTest {
     }
 
     @Test
+    fun `authenticate normalizes allowed output formats`() = runBlocking {
+        val provider = XtreamProvider(
+            providerId = 42,
+            api = FakeXtreamApiService(
+                authResponse = XtreamAuthResponse(
+                    userInfo = XtreamUserInfo(
+                        auth = 1,
+                        allowedOutputFormats = listOf("TS", "m3u8", "  ts  ")
+                    ),
+                    serverInfo = XtreamServerInfo()
+                )
+            ),
+            serverUrl = "https://example.com",
+            username = "user",
+            password = "pass"
+        )
+
+        val authenticated = provider.authenticate().getOrNull()
+
+        assertThat(authenticated?.allowedOutputFormats).containsExactly("ts", "m3u8").inOrder()
+    }
+
+    @Test
     fun `getLiveStreams preserves live container extension in internal url`() = runBlocking {
         val provider = XtreamProvider(
             providerId = 42,
@@ -64,6 +87,60 @@ class XtreamProviderTest {
         assertThat(channels.first().streamUrl).isEqualTo(
             "xtream://42/live/777?ext=m3u8&src=https%3A%2F%2Fcdn.example.com%2Flive%2F777%2Fmaster.m3u8%3Ftoken%3Dabc"
         )
+    }
+
+    @Test
+    fun `getLiveStreams prefers hls and keeps ts fallback when both output formats are allowed`() = runBlocking {
+        val provider = XtreamProvider(
+            providerId = 42,
+            api = FakeXtreamApiService(
+                liveStreams = listOf(
+                    XtreamStream(
+                        name = "Live Channel",
+                        streamId = 777
+                    )
+                )
+            ),
+            serverUrl = "https://example.com",
+            username = "user",
+            password = "pass",
+            allowedOutputFormats = listOf("ts", "m3u8")
+        )
+
+        val channel = provider.getLiveStreams().getOrNull().orEmpty().single()
+
+        assertThat(channel.streamUrl).isEqualTo("xtream://42/live/777?ext=m3u8")
+        assertThat(channel.alternativeStreams).containsExactly("xtream://42/live/777?ext=ts")
+        assertThat(channel.qualityOptions.map { it.label to it.url }).containsExactly(
+            "HLS" to "xtream://42/live/777?ext=m3u8",
+            "MPEG-TS" to "xtream://42/live/777?ext=ts"
+        ).inOrder()
+    }
+
+    @Test
+    fun `buildCatchUpUrls includes xtream route and php fallbacks for preferred formats`() = runBlocking {
+        val provider = XtreamProvider(
+            providerId = 42,
+            api = FakeXtreamApiService(),
+            serverUrl = "https://example.com",
+            username = "user",
+            password = "pass",
+            allowedOutputFormats = listOf("m3u8", "ts")
+        )
+
+        val urls = provider.buildCatchUpUrls(
+            streamId = 777,
+            start = 1_710_000_000L,
+            end = 1_710_003_600L
+        )
+
+        assertThat(urls).containsAtLeast(
+            "https://example.com/timeshift/user/pass/60/2024-03-09%3A16-00/777.m3u8",
+            "https://example.com/timeshifts/user/pass/60/777/2024-03-09%3A16-00.m3u8",
+            "https://example.com/streaming/timeshift.php?username=user&password=pass&stream=777&start=2024-03-09%3A16-00&duration=60&extension=m3u8",
+            "https://example.com/timeshift.php?username=user&password=pass&stream=777&start=2024-03-09%3A16-00&duration=60"
+        )
+        assertThat(urls.first()).isEqualTo("https://example.com/timeshift/user/pass/60/2024-03-09%3A16-00/777.m3u8")
     }
 
     @Test
@@ -106,7 +183,83 @@ class XtreamProviderTest {
         )
     }
 
+    @Test
+    fun `getVodStreams still loads when category prefetch fails`() = runBlocking {
+        val provider = XtreamProvider(
+            providerId = 42,
+            api = object : XtreamApiService {
+                override suspend fun authenticate(endpoint: String): XtreamAuthResponse =
+                    XtreamAuthResponse(XtreamUserInfo(auth = 1), XtreamServerInfo())
+
+                override suspend fun getLiveCategories(endpoint: String): List<XtreamCategory> = emptyList()
+
+                override suspend fun getLiveStreams(endpoint: String): List<XtreamStream> = emptyList()
+
+                override suspend fun getVodCategories(endpoint: String): List<XtreamCategory> {
+                    throw XtreamNetworkException("category prefetch failed")
+                }
+
+                override suspend fun getVodStreams(endpoint: String): List<XtreamStream> = listOf(
+                    XtreamStream(
+                        name = "Action Movie",
+                        streamId = 321,
+                        categoryId = "vod-action",
+                        categoryName = "Action",
+                        containerExtension = "mp4"
+                    )
+                )
+
+                override suspend fun getVodInfo(endpoint: String): XtreamVodInfoResponse = XtreamVodInfoResponse()
+
+                override suspend fun getSeriesCategories(endpoint: String): List<XtreamCategory> = emptyList()
+
+                override suspend fun getSeriesList(endpoint: String): List<XtreamSeriesItem> = emptyList()
+
+                override suspend fun getSeriesInfo(endpoint: String): XtreamSeriesInfoResponse = XtreamSeriesInfoResponse()
+
+                override suspend fun getShortEpg(endpoint: String): XtreamEpgResponse = XtreamEpgResponse()
+
+                override suspend fun getFullEpg(endpoint: String): XtreamEpgResponse = XtreamEpgResponse()
+            },
+            serverUrl = "https://example.com",
+            username = "user",
+            password = "pass"
+        )
+
+        val movies = provider.getVodStreams().getOrNull().orEmpty()
+
+        assertThat(movies).hasSize(1)
+        assertThat(movies.first().name).isEqualTo("Action Movie")
+        assertThat(movies.first().categoryName).isEqualTo("Action")
+        assertThat(movies.first().categoryId).isNotNull()
+    }
+
+    @Test
+    fun `getVodStreams honors explicit adult flag from xtream payload`() = runBlocking {
+        val provider = XtreamProvider(
+            providerId = 42,
+            api = FakeXtreamApiService(
+                vodStreams = listOf(
+                    XtreamStream(
+                        name = "Movie",
+                        streamId = 55,
+                        categoryName = "Cinema",
+                        isAdult = true
+                    )
+                )
+            ),
+            serverUrl = "https://example.com",
+            username = "user",
+            password = "pass"
+        )
+
+        val movie = provider.getVodStreams().getOrNull().orEmpty().single()
+
+        assertThat(movie.isAdult).isTrue()
+    }
+
     private class FakeXtreamApiService(
+        private val authResponse: XtreamAuthResponse = XtreamAuthResponse(XtreamUserInfo(auth = 1), XtreamServerInfo()),
         private val liveCategories: List<XtreamCategory> = emptyList(),
         private val liveStreams: List<XtreamStream> = emptyList(),
         private val vodCategories: List<XtreamCategory> = emptyList(),
@@ -119,7 +272,7 @@ class XtreamProviderTest {
         private val fullEpg: XtreamEpgResponse = XtreamEpgResponse()
     ) : XtreamApiService {
         override suspend fun authenticate(endpoint: String): XtreamAuthResponse {
-            return XtreamAuthResponse(XtreamUserInfo(auth = 1), XtreamServerInfo())
+            return authResponse
         }
 
         override suspend fun getLiveCategories(endpoint: String): List<XtreamCategory> = liveCategories

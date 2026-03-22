@@ -52,6 +52,7 @@ import com.streamvault.app.ui.components.rememberCrossfadeImageModel
 import com.streamvault.app.ui.design.AppColors
 import com.streamvault.app.ui.design.AppMotion
 import com.streamvault.app.ui.design.FocusSpec
+import com.streamvault.app.ui.interaction.rememberTvInteractionSounds
 import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.Episode
 import com.streamvault.domain.model.Movie
@@ -185,6 +186,7 @@ fun LiveChannelRowSurface(
     rowHeight: Dp = 68.dp
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val sounds = rememberTvInteractionSounds()
     val favoriteLabel = stringResource(R.string.a11y_favorite)
     val catchUpLabel = stringResource(R.string.a11y_catch_up_available)
     val lockedLabel = stringResource(R.string.a11y_locked)
@@ -214,7 +216,10 @@ fun LiveChannelRowSurface(
     )
 
     Surface(
-        onClick = onClick,
+        onClick = {
+            sounds.playSelect()
+            onClick()
+        },
         onLongClick = onLongClick,
         modifier = modifier
             .fillMaxWidth()
@@ -228,7 +233,12 @@ fun LiveChannelRowSurface(
                     stateDescription = lockedLabel
                 }
             }
-            .onFocusChanged { isFocused = it.isFocused },
+            .onFocusChanged {
+                if (it.isFocused && !isFocused) {
+                    sounds.playNavigate()
+                }
+                isFocused = it.isFocused
+            },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(16.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = AppColors.SurfaceElevated,

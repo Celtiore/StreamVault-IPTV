@@ -35,6 +35,9 @@ import java.util.concurrent.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -551,20 +554,69 @@ class HomeViewModel @Inject constructor(
             } else {
                 emptyMap()
             }
+            val fallbackProgramMap = fetchXtreamNowPlayingFallback(
+                providerId = providerId,
+                channels = channels,
+                existingPrograms = freshProgramMap
+            )
+            val mergedProgramMap = freshProgramMap + fallbackProgramMap
 
             val channelEpgIds = channels.mapNotNull { it.epgChannelId }.toSet()
             _epgProgramMap.update { existing ->
                 buildMap {
                     putAll(existing)
                     channelEpgIds.forEach { epgId ->
-                        if (freshProgramMap.containsKey(epgId)) {
-                            put(epgId, freshProgramMap.getValue(epgId))
+                        if (mergedProgramMap.containsKey(epgId)) {
+                            put(epgId, mergedProgramMap.getValue(epgId))
                         } else {
                             remove(epgId)
                         }
                     }
                 }
             }
+        }
+    }
+
+    private suspend fun fetchXtreamNowPlayingFallback(
+        providerId: Long,
+        channels: List<Channel>,
+        existingPrograms: Map<String, Program>
+    ): Map<String, Program> {
+        if (_uiState.value.provider?.type != com.streamvault.domain.model.ProviderType.XTREAM_CODES) {
+            return emptyMap()
+        }
+
+        val missingChannels = channels.filter { channel ->
+            !channel.epgChannelId.isNullOrBlank() &&
+                channel.streamId > 0L &&
+                !existingPrograms.containsKey(channel.epgChannelId)
+        }
+        if (missingChannels.isEmpty()) {
+            return emptyMap()
+        }
+
+        val now = System.currentTimeMillis()
+        return coroutineScope {
+            missingChannels
+                .take(10)
+                .map { channel ->
+                    async {
+                        val result = providerRepository.getProgramsForLiveStream(
+                            providerId = providerId,
+                            streamId = channel.streamId,
+                            epgChannelId = channel.epgChannelId,
+                            limit = 6
+                        )
+                        val programs = (result as? Result.Success)?.data.orEmpty()
+                        val currentProgram = programs.firstOrNull { it.startTime <= now && it.endTime > now }
+                            ?: programs.firstOrNull()
+                        val epgId = channel.epgChannelId ?: return@async null
+                        currentProgram?.let { epgId to it }
+                    }
+                }
+                .awaitAll()
+                .mapNotNull { it }
+                .toMap()
         }
     }
 

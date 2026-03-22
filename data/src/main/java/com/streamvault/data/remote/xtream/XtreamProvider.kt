@@ -28,10 +28,20 @@ class XtreamProvider(
     private val api: XtreamApiService,
     private val serverUrl: String,
     private val username: String,
-    private val password: String
+    private val password: String,
+    private val allowedOutputFormats: List<String> = emptyList()
 ) : IptvProvider {
+    companion object {
+        private const val TAG = "XtreamProvider"
+    }
+
+    private data class ResolvedXtreamCategory(
+        val id: Long?,
+        val name: String?
+    )
 
     private var serverInfo: XtreamServerInfo? = null
+    private var liveOutputFormats: List<String> = normalizeAllowedOutputFormats(allowedOutputFormats)
     private val adultCategoryCache = mutableMapOf<ContentType, Set<Long>>()
     private val adultCategoryCacheMutex = Mutex()
 
@@ -40,6 +50,8 @@ class XtreamProvider(
             XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password)
         )
         serverInfo = response.serverInfo
+        liveOutputFormats = normalizeAllowedOutputFormats(response.userInfo.allowedOutputFormats)
+            .ifEmpty { liveOutputFormats }
 
         if (response.userInfo.auth != 1) {
             Result.error("Authentication failed: ${response.userInfo.message}")
@@ -60,12 +72,13 @@ class XtreamProvider(
                     expirationDate = expDate,
                     apiVersion = response.serverInfo.apiVersion?.takeIf { it.isNotBlank() }
                         ?: response.serverInfo.version?.takeIf { it.isNotBlank() },
+                    allowedOutputFormats = liveOutputFormats,
                     status = when (response.userInfo.status) {
                         "Active" -> ProviderStatus.ACTIVE
                         "Expired" -> ProviderStatus.EXPIRED
                         "Disabled" -> ProviderStatus.DISABLED
                         else -> {
-                            Log.w("XtreamProvider", "Unknown account status: ${response.userInfo.status}")
+                            Log.w(TAG, "Unknown account status: ${response.userInfo.status}")
                             ProviderStatus.UNKNOWN
                         }
                     }
@@ -99,7 +112,19 @@ class XtreamProvider(
                 extraQueryParams = mapOf("category_id" to categoryId?.toString())
             )
         )
-        Result.success(streams.map { it.toChannel(adultCategoryIds) })
+        Result.success(
+            streams.mapNotNull { stream ->
+                runCatching { stream.toChannel(adultCategoryIds) }
+                    .onFailure {
+                        Log.w(
+                            TAG,
+                            "Skipping malformed live item ${stream.streamId}: " +
+                                XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                        )
+                    }
+                    .getOrNull()
+            }
+        )
     } catch (e: Exception) {
         Result.error(XtreamErrorFormatter.message("Failed to load live streams", e), e)
     }
@@ -127,7 +152,19 @@ class XtreamProvider(
                 extraQueryParams = mapOf("category_id" to categoryId?.toString())
             )
         )
-        Result.success(streams.map { it.toMovie(adultCategoryIds) })
+        Result.success(
+            streams.mapNotNull { stream ->
+                runCatching { stream.toMovie(adultCategoryIds) }
+                    .onFailure {
+                        Log.w(
+                            TAG,
+                            "Skipping malformed VOD item ${stream.streamId}: " +
+                                XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                        )
+                    }
+                    .getOrNull()
+            }
+        )
     } catch (e: Exception) {
         Result.error(XtreamErrorFormatter.message("Failed to load VOD", e), e)
     }
@@ -147,15 +184,22 @@ class XtreamProvider(
 
         if (movieData == null) {
             Result.error("Movie not found")
+        } else if (movieData.streamId <= 0) {
+            Result.error("Movie stream is invalid")
         } else {
+            val adultCategoryIds = loadAdultCategoryIds(ContentType.MOVIE)
+            val category = resolveXtreamCategory(ContentType.MOVIE, movieData.categoryId, null)
+            val normalizedContainerExtension = normalizeContainerExtension(movieData.containerExtension)
+            val sanitizedDirectSource = sanitizeAssetValue(movieData.directSource)
             Result.success(
                 Movie(
                     id = movieData.streamId,
-                    name = decodeXtreamText(movieData.name),
-                    posterUrl = info?.movieImage,
-                    backdropUrl = info?.backdropPath?.firstOrNull(),
-                    categoryId = movieData.categoryId?.toLongOrNull(),
-                    containerExtension = movieData.containerExtension,
+                    name = decodeXtreamNullableText(movieData.name)?.ifBlank { null } ?: "Movie ${movieData.streamId}",
+                    posterUrl = sanitizeAssetValue(info?.movieImage),
+                    backdropUrl = firstUsableAsset(info?.backdropPath),
+                    categoryId = category.id,
+                    categoryName = category.name,
+                    containerExtension = normalizedContainerExtension,
                     plot = decodeXtreamNullableText(info?.plot),
                     cast = decodeXtreamNullableText(info?.cast),
                     director = decodeXtreamNullableText(info?.director),
@@ -164,21 +208,22 @@ class XtreamProvider(
                     duration = info?.duration,
                     durationSeconds = info?.durationSecs ?: 0,
                     rating = info?.rating?.toFloatOrNull() ?: 0f,
-                    tmdbId = info?.tmdbId,
-                    youtubeTrailer = info?.youtubeTrailer,
+                    tmdbId = info?.tmdbId ?: movieData.tmdb?.trim()?.toLongOrNull(),
+                    youtubeTrailer = info?.youtubeTrailer ?: movieData.youtubeTrailer ?: movieData.trailer,
                     providerId = providerId,
                     streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
                         providerId = providerId,
                         kind = XtreamStreamKind.MOVIE,
                         streamId = movieData.streamId,
-                        containerExtension = movieData.containerExtension,
-                        directSource = movieData.directSource
+                        containerExtension = normalizedContainerExtension,
+                        directSource = sanitizedDirectSource
                     ),
                     streamId = movieData.streamId,
                     isAdult = resolveAdultFlag(
-                        categoryId = movieData.categoryId?.toLongOrNull(),
-                        categoryName = null,
-                        adultCategoryIds = loadAdultCategoryIds(ContentType.MOVIE)
+                        explicitAdult = movieData.isAdult,
+                        categoryId = category.id,
+                        categoryName = category.name,
+                        adultCategoryIds = adultCategoryIds
                     )
                 )
             )
@@ -210,7 +255,19 @@ class XtreamProvider(
                 extraQueryParams = mapOf("category_id" to categoryId?.toString())
             )
         )
-        Result.success(items.map { it.toDomain(adultCategoryIds) })
+        Result.success(
+            items.mapNotNull { item ->
+                runCatching { item.toDomain(adultCategoryIds) }
+                    .onFailure {
+                        Log.w(
+                            TAG,
+                            "Skipping malformed series item ${item.seriesId}: " +
+                                XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                        )
+                    }
+                    .getOrNull()
+            }
+        )
     } catch (e: Exception) {
         Result.error(XtreamErrorFormatter.message("Failed to load series", e), e)
     }
@@ -231,53 +288,59 @@ class XtreamProvider(
             Result.error("Series not found")
         } else {
             val adultCategoryIds = loadAdultCategoryIds(ContentType.SERIES)
+            val baseSeries = info.toDomain(adultCategoryIds)
+                ?: return Result.error("Series payload is invalid")
             val isAdult = resolveAdultFlag(
+                explicitAdult = info.isAdult,
                 categoryId = info.categoryId?.toLongOrNull(),
                 categoryName = null,
                 adultCategoryIds = adultCategoryIds
             )
             val seasons = response.episodes.map { (seasonNum, episodes) ->
+                val mappedEpisodes = episodes.mapNotNull { ep ->
+                    val episodeId = ep.id.toLongOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+                    val normalizedExtension = normalizeContainerExtension(ep.containerExtension)
+                    Episode(
+                        id = episodeId,
+                        title = decodeXtreamText(
+                            ep.title.ifBlank { decodeXtreamNullableText(ep.info?.name) ?: "Episode ${ep.episodeNum}" }
+                        ),
+                        episodeNumber = ep.episodeNum,
+                        seasonNumber = ep.season,
+                        containerExtension = normalizedExtension,
+                        coverUrl = sanitizeAssetValue(ep.info?.movieImage),
+                        plot = decodeXtreamNullableText(ep.info?.plot),
+                        duration = ep.info?.duration,
+                        durationSeconds = ep.info?.durationSecs ?: 0,
+                        rating = ep.info?.rating?.toFloatOrNull() ?: 0f,
+                        releaseDate = ep.info?.releaseDate,
+                        seriesId = seriesId,
+                        providerId = providerId,
+                        streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
+                            providerId = providerId,
+                            kind = XtreamStreamKind.SERIES,
+                            streamId = episodeId,
+                            containerExtension = normalizedExtension,
+                            directSource = sanitizeAssetValue(ep.directSource)
+                        ),
+                        isAdult = isAdult,
+                        isUserProtected = false,
+                        episodeId = episodeId
+                    )
+                }
                 Season(
                     seasonNumber = seasonNum.toIntOrNull() ?: 0,
                     name = "Season $seasonNum",
                     coverUrl = response.seasons.find {
                         it.seasonNumber == (seasonNum.toIntOrNull() ?: 0)
                     }?.cover,
-                    episodes = episodes.map { ep ->
-                        Episode(
-                            id = ep.id.toLongOrNull() ?: 0,
-                            title = decodeXtreamText(
-                                ep.title.ifBlank { decodeXtreamNullableText(ep.info?.name) ?: "Episode ${ep.episodeNum}" }
-                            ),
-                            episodeNumber = ep.episodeNum,
-                            seasonNumber = ep.season,
-                            containerExtension = ep.containerExtension,
-                            coverUrl = ep.info?.movieImage,
-                            plot = decodeXtreamNullableText(ep.info?.plot),
-                            duration = ep.info?.duration,
-                            durationSeconds = ep.info?.durationSecs ?: 0,
-                            rating = ep.info?.rating?.toFloatOrNull() ?: 0f,
-                            releaseDate = ep.info?.releaseDate,
-                            seriesId = seriesId,
-                            providerId = providerId,
-                            streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
-                                providerId = providerId,
-                                kind = XtreamStreamKind.SERIES,
-                                streamId = ep.id.toLongOrNull() ?: 0,
-                                containerExtension = ep.containerExtension,
-                                directSource = ep.directSource
-                            ),
-                            isAdult = isAdult,
-                            isUserProtected = false,
-                            episodeId = ep.id.toLongOrNull() ?: 0
-                        )
-                    },
-                    episodeCount = episodes.size
+                    episodes = mappedEpisodes,
+                    episodeCount = mappedEpisodes.size
                 )
             }.sortedBy { it.seasonNumber }
 
             Result.success(
-                info.toDomain(adultCategoryIds).copy(
+                baseSeries.copy(
                     seasons = seasons,
                     providerId = providerId,
                     isAdult = isAdult
@@ -334,7 +397,7 @@ class XtreamProvider(
             password = password,
             kind = XtreamStreamKind.LIVE,
             streamId = streamId,
-            containerExtension = containerExtension
+            containerExtension = preferredLiveContainerExtension(containerExtension)
         )
     }
 
@@ -361,18 +424,75 @@ class XtreamProvider(
     }
 
     override suspend fun buildCatchUpUrl(streamId: Long, start: Long, end: Long): String? {
+        return buildCatchUpUrls(streamId, start, end).firstOrNull()
+    }
+
+    override suspend fun buildCatchUpUrls(streamId: Long, start: Long, end: Long): List<String> {
         val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd:HH-mm", java.util.Locale.ROOT)
         dateFormat.timeZone = java.util.TimeZone.getTimeZone("UTC") // Xtream servers typically use UTC for EPG timeshifts
         val formattedStart = dateFormat.format(java.util.Date(start * 1000L))
-        val durationMinutes = (end - start) / 60
-        return XtreamUrlFactory.buildCatchUpUrl(
+        val durationMinutes = ((end - start) / 60).coerceAtLeast(1L)
+        return XtreamUrlFactory.buildCatchUpUrls(
             serverUrl = serverUrl,
             username = username,
             password = password,
             durationMinutes = durationMinutes,
             formattedStart = formattedStart,
-            streamId = streamId
+            streamId = streamId,
+            containerExtensions = candidateCatchUpExtensions()
         )
+    }
+
+    suspend fun mapCategories(type: ContentType, categories: List<XtreamCategory>): List<Category> {
+        if (type != ContentType.SERIES_EPISODE) {
+            cacheAdultCategoryIds(type, categories)
+        }
+        return categories.map { it.toDomain(type) }
+    }
+
+    suspend fun mapVodStreamsResponse(streams: List<XtreamStream>): List<Movie> {
+        val adultCategoryIds = loadAdultCategoryIds(ContentType.MOVIE)
+        return streams.mapNotNull { stream ->
+            runCatching { stream.toMovie(adultCategoryIds) }
+                .onFailure {
+                    Log.w(
+                        TAG,
+                        "Skipping malformed VOD item ${stream.streamId}: " +
+                            XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                    )
+                }
+                .getOrNull()
+        }
+    }
+
+    suspend fun mapLiveStreamsResponse(streams: List<XtreamStream>): List<Channel> {
+        val adultCategoryIds = loadAdultCategoryIds(ContentType.LIVE)
+        return streams.mapNotNull { stream ->
+            runCatching { stream.toChannel(adultCategoryIds) }
+                .onFailure {
+                    Log.w(
+                        TAG,
+                        "Skipping malformed live item ${stream.streamId}: " +
+                            XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                    )
+                }
+                .getOrNull()
+        }
+    }
+
+    suspend fun mapSeriesListResponse(items: List<XtreamSeriesItem>): List<Series> {
+        val adultCategoryIds = loadAdultCategoryIds(ContentType.SERIES)
+        return items.mapNotNull { item ->
+            runCatching { item.toDomain(adultCategoryIds) }
+                .onFailure {
+                    Log.w(
+                        TAG,
+                        "Skipping malformed series item ${item.seriesId}: " +
+                            XtreamUrlFactory.sanitizeLogMessage(it.message ?: "mapping failed")
+                    )
+                }
+                .getOrNull()
+        }
     }
 
     // ── Mappers ────────────────────────────────────────────────────
@@ -380,21 +500,30 @@ class XtreamProvider(
     private suspend fun loadAdultCategoryIds(type: ContentType): Set<Long> {
         adultCategoryCacheMutex.withLock {
             adultCategoryCache[type]?.let { return it }
-            val categories = when (type) {
-                ContentType.LIVE -> api.getLiveCategories(
-                    XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_live_categories")
+            val categories = runCatching {
+                when (type) {
+                    ContentType.LIVE -> api.getLiveCategories(
+                        XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_live_categories")
+                    )
+                    ContentType.MOVIE -> api.getVodCategories(
+                        XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_vod_categories")
+                    )
+                    ContentType.SERIES -> api.getSeriesCategories(
+                        XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_series_categories")
+                    )
+                    ContentType.SERIES_EPISODE -> emptyList()
+                }
+            }.getOrElse {
+                Log.w(
+                    TAG,
+                    "Failed to prefetch $type categories for adult tagging: " +
+                        XtreamUrlFactory.sanitizeLogMessage(it.message ?: "unknown error")
                 )
-                ContentType.MOVIE -> api.getVodCategories(
-                    XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_vod_categories")
-                )
-                ContentType.SERIES -> api.getSeriesCategories(
-                    XtreamUrlFactory.buildPlayerApiUrl(serverUrl, username, password, action = "get_series_categories")
-                )
-                ContentType.SERIES_EPISODE -> emptyList()
+                emptyList()
             }
             return categories
                 .filter { AdultContentClassifier.isAdultCategoryName(it.categoryName) }
-                .mapNotNull { it.categoryId.toLongOrNull() }
+                .mapNotNull { resolveXtreamCategory(type, it.categoryId, it.categoryName).id }
                 .toSet()
                 .also { adultCategoryCache[type] = it }
         }
@@ -403,7 +532,7 @@ class XtreamProvider(
     private suspend fun cacheAdultCategoryIds(type: ContentType, categories: List<XtreamCategory>) {
         val ids = categories
             .filter { AdultContentClassifier.isAdultCategoryName(it.categoryName) }
-            .mapNotNull { it.categoryId.toLongOrNull() }
+            .mapNotNull { resolveXtreamCategory(type, it.categoryId, it.categoryName).id }
             .toSet()
         adultCategoryCacheMutex.withLock {
             adultCategoryCache[type] = ids
@@ -411,101 +540,221 @@ class XtreamProvider(
     }
 
     private fun resolveAdultFlag(
+        explicitAdult: Boolean?,
         categoryId: Long?,
         categoryName: String?,
         adultCategoryIds: Set<Long>
     ): Boolean {
-        return (categoryId != null && categoryId in adultCategoryIds) ||
+        return explicitAdult == true ||
+            (categoryId != null && categoryId in adultCategoryIds) ||
             AdultContentClassifier.isAdultCategoryName(categoryName)
     }
 
-    private fun XtreamCategory.toDomain(type: ContentType) = Category(
-        id = categoryId.toLongOrNull() ?: 0,
-        name = categoryName,
-        parentId = if (parentId > 0) parentId.toLong() else null,
-        type = type,
-        isAdult = AdultContentClassifier.isAdultCategoryName(categoryName)
-    )
+    private fun normalizeAllowedOutputFormats(formats: List<String>): List<String> {
+        return formats
+            .mapNotNull { format ->
+                normalizeContainerExtension(format)
+                    ?.takeIf(::isRecognizedLiveFormat)
+            }
+            .distinct()
+    }
 
-    private fun XtreamStream.toChannel(adultCategoryIds: Set<Long>): Channel {
+    private fun preferredLiveContainerExtension(containerExtension: String?): String? {
+        normalizeContainerExtension(containerExtension)?.let { return it }
+        return when {
+            "m3u8" in liveOutputFormats -> "m3u8"
+            "ts" in liveOutputFormats -> "ts"
+            else -> null
+        }
+    }
+
+    private fun candidateCatchUpExtensions(): List<String> {
+        return liveOutputFormats
+            .filter(::isRecognizedLiveFormat)
+            .ifEmpty { listOf("ts", "m3u8") }
+            .distinct()
+    }
+
+    private fun buildInternalLiveStreamUrl(
+        streamId: Long,
+        containerExtension: String?,
+        directSource: String?
+    ): String {
+        return XtreamUrlFactory.buildInternalStreamUrl(
+            providerId = providerId,
+            kind = XtreamStreamKind.LIVE,
+            streamId = streamId,
+            containerExtension = containerExtension,
+            directSource = directSource
+        )
+    }
+
+    private fun buildLiveQualityOptions(
+        streamId: Long,
+        primaryContainerExtension: String?,
+        directSource: String?
+    ): List<ChannelQualityOption> {
+        val extensions = buildList {
+            primaryContainerExtension?.let(::add)
+            if (directSource == null) {
+                liveOutputFormats
+                    .filter(::isRecognizedLiveFormat)
+                    .filter { it != primaryContainerExtension }
+                    .forEach(::add)
+            }
+        }.distinct()
+
+        return extensions.map { extension ->
+            ChannelQualityOption(
+                label = liveFormatLabel(extension),
+                url = buildInternalLiveStreamUrl(
+                    streamId = streamId,
+                    containerExtension = extension,
+                    directSource = if (extension == primaryContainerExtension) directSource else null
+                )
+            )
+        }
+    }
+
+    private fun liveFormatLabel(extension: String): String = when (extension.lowercase(Locale.ROOT)) {
+        "m3u8" -> "HLS"
+        "ts" -> "MPEG-TS"
+        else -> extension.uppercase(Locale.ROOT)
+    }
+
+    private fun isRecognizedLiveFormat(extension: String): Boolean =
+        extension == "m3u8" || extension == "ts"
+
+    private fun normalizeContainerExtension(containerExtension: String?): String? {
+        return containerExtension
+            ?.trim()
+            ?.removePrefix(".")
+            ?.lowercase(Locale.ROOT)
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun XtreamCategory.toDomain(type: ContentType): Category {
+        val category = resolveXtreamCategory(type, categoryId, categoryName)
+        return Category(
+            id = category.id ?: 0,
+            name = category.name ?: "Uncategorized",
+            parentId = if (parentId > 0) parentId.toLong() else null,
+            type = type,
+            isAdult = AdultContentClassifier.isAdultCategoryName(category.name)
+        )
+    }
+
+    private fun XtreamStream.toChannel(adultCategoryIds: Set<Long>): Channel? {
+        if (streamId <= 0) return null
+        val category = resolveXtreamCategory(ContentType.LIVE, categoryId, categoryName)
+        val primaryContainerExtension = preferredLiveContainerExtension(containerExtension)
+        val resolvedName = decodeXtreamNullableText(name)?.ifBlank { null } ?: "Channel $streamId"
+        val sanitizedLogoUrl = sanitizeAssetValue(streamIcon)
+        val sanitizedEpgChannelId = decodeXtreamNullableText(epgChannelId)
+        val sanitizedDirectSource = sanitizeAssetValue(directSource)
+        val streamUrl = buildInternalLiveStreamUrl(
+            streamId = streamId,
+            containerExtension = primaryContainerExtension,
+            directSource = sanitizedDirectSource
+        )
+        val qualityOptions = buildLiveQualityOptions(
+            streamId = streamId,
+            primaryContainerExtension = primaryContainerExtension,
+            directSource = sanitizedDirectSource
+        )
         return Channel(
             id = 0,
-            name = decodeXtreamText(name),
-            logoUrl = streamIcon,
-            categoryId = categoryId?.toLongOrNull(),
-            categoryName = decodeXtreamNullableText(categoryName),
-            epgChannelId = epgChannelId,
+            name = resolvedName,
+            logoUrl = sanitizedLogoUrl,
+            categoryId = category.id,
+            categoryName = category.name,
+            epgChannelId = sanitizedEpgChannelId,
             number = num,
             catchUpSupported = tvArchive == 1,
             catchUpDays = tvArchiveDuration ?: 0,
             providerId = providerId,
-            streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
-                providerId = providerId,
-                kind = XtreamStreamKind.LIVE,
-                streamId = streamId,
-                containerExtension = containerExtension,
-                directSource = directSource
-            ),
+            streamUrl = streamUrl,
             isAdult = resolveAdultFlag(
-                categoryId = categoryId?.toLongOrNull(),
-                categoryName = categoryName,
+                explicitAdult = isAdult,
+                categoryId = category.id,
+                categoryName = category.name,
                 adultCategoryIds = adultCategoryIds
             ),
             isUserProtected = false,
-            logicalGroupId = ChannelNormalizer.getLogicalGroupId(name, providerId),
+            logicalGroupId = ChannelNormalizer.getLogicalGroupId(resolvedName, providerId),
+            qualityOptions = qualityOptions,
+            alternativeStreams = qualityOptions.mapNotNull { it.url }.filter { it != streamUrl },
             streamId = streamId
         )
     }
 
-    private fun XtreamStream.toMovie(adultCategoryIds: Set<Long>) = Movie(
-        id = 0,
-        name = decodeXtreamText(name),
-        posterUrl = streamIcon,
-        categoryId = categoryId?.toLongOrNull(),
-        categoryName = decodeXtreamNullableText(categoryName),
-        containerExtension = containerExtension,
-        rating = rating5based?.toFloatOrNull() ?: rating?.toFloatOrNull() ?: 0f,
-        providerId = providerId,
-        streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
+    private fun XtreamStream.toMovie(adultCategoryIds: Set<Long>): Movie? {
+        if (streamId <= 0) return null
+        val category = resolveXtreamCategory(ContentType.MOVIE, categoryId, categoryName)
+        val resolvedName = decodeXtreamNullableText(name)?.ifBlank { null } ?: "Movie $streamId"
+        val normalizedContainerExtension = normalizeContainerExtension(containerExtension)
+        val sanitizedDirectSource = sanitizeAssetValue(directSource)
+        return Movie(
+            id = 0,
+            name = resolvedName,
+            posterUrl = sanitizeAssetValue(coverBig) ?: sanitizeAssetValue(streamIcon),
+            categoryId = category.id,
+            categoryName = category.name,
+            containerExtension = normalizedContainerExtension,
+            rating = rating5based?.toFloatOrNull() ?: rating?.toFloatOrNull() ?: 0f,
+            tmdbId = tmdb?.trim()?.toLongOrNull(),
+            youtubeTrailer = youtubeTrailer ?: trailer,
             providerId = providerId,
-            kind = XtreamStreamKind.MOVIE,
-            streamId = streamId,
-            containerExtension = containerExtension,
-            directSource = directSource
-        ),
-        isAdult = resolveAdultFlag(
-            categoryId = categoryId?.toLongOrNull(),
-            categoryName = categoryName,
-            adultCategoryIds = adultCategoryIds
-        ),
-        isUserProtected = false,
-        streamId = streamId
-    )
+            streamUrl = XtreamUrlFactory.buildInternalStreamUrl(
+                providerId = providerId,
+                kind = XtreamStreamKind.MOVIE,
+                streamId = streamId,
+                containerExtension = normalizedContainerExtension,
+                directSource = sanitizedDirectSource
+            ),
+            isAdult = resolveAdultFlag(
+                explicitAdult = isAdult,
+                categoryId = category.id,
+                categoryName = category.name,
+                adultCategoryIds = adultCategoryIds
+            ),
+            isUserProtected = false,
+            streamId = streamId
+        )
+    }
 
-    private fun XtreamSeriesItem.toDomain(adultCategoryIds: Set<Long>) = Series(
-        id = 0,
-        name = decodeXtreamText(name),
-        posterUrl = cover,
-        backdropUrl = backdropPath?.firstOrNull(),
-        categoryId = categoryId?.toLongOrNull(),
-        plot = decodeXtreamNullableText(plot),
-        cast = decodeXtreamNullableText(cast),
-        director = decodeXtreamNullableText(director),
-        genre = decodeXtreamNullableText(genre),
-        releaseDate = releaseDate,
-        rating = rating5based?.toFloatOrNull() ?: rating?.toFloatOrNull() ?: 0f,
-        youtubeTrailer = youtubeTrailer,
-        episodeRunTime = episodeRunTime,
-        lastModified = lastModified?.toLongOrNull() ?: 0L,
-        providerId = providerId,
-        isAdult = resolveAdultFlag(
-            categoryId = categoryId?.toLongOrNull(),
-            categoryName = null,
-            adultCategoryIds = adultCategoryIds
-        ),
-        isUserProtected = false,
-        seriesId = seriesId
-    )
+    private fun XtreamSeriesItem.toDomain(adultCategoryIds: Set<Long>): Series? {
+        if (seriesId <= 0) return null
+        val category = resolveXtreamCategory(ContentType.SERIES, categoryId, null)
+        val resolvedName = decodeXtreamNullableText(name)?.ifBlank { null } ?: "Series $seriesId"
+        return Series(
+            id = 0,
+            name = resolvedName,
+            posterUrl = sanitizeAssetValue(coverBig) ?: sanitizeAssetValue(cover),
+            backdropUrl = firstUsableAsset(backdropPath),
+            categoryId = category.id,
+            categoryName = category.name,
+            plot = decodeXtreamNullableText(plot),
+            cast = decodeXtreamNullableText(cast),
+            director = decodeXtreamNullableText(director),
+            genre = decodeXtreamNullableText(genre),
+            releaseDate = releaseDate,
+            rating = rating5based?.toFloatOrNull() ?: rating?.toFloatOrNull() ?: 0f,
+            tmdbId = tmdb?.trim()?.toLongOrNull(),
+            youtubeTrailer = youtubeTrailer ?: trailer,
+            episodeRunTime = episodeRunTime,
+            lastModified = lastModified?.toLongOrNull() ?: 0L,
+            providerId = providerId,
+            isAdult = resolveAdultFlag(
+                explicitAdult = isAdult,
+                categoryId = category.id,
+                categoryName = category.name,
+                adultCategoryIds = adultCategoryIds
+            ),
+            isUserProtected = false,
+            seriesId = seriesId
+        )
+    }
 
     private fun XtreamEpgListing.toDomain(): Program {
         // Xtream sometimes base64-encodes title and description
@@ -531,12 +780,58 @@ class XtreamProvider(
         return value?.let(::decodeXtreamText)?.takeIf { it.isNotBlank() }
     }
 
+    private fun sanitizeAssetValue(value: String?): String? {
+        return value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+    }
+
+    private fun firstUsableAsset(values: List<String>?): String? {
+        return values.orEmpty().firstNotNullOfOrNull(::sanitizeAssetValue)
+    }
+
     private fun decodeXtreamText(value: String): String = tryBase64Decode(value).trim()
 
+    private fun resolveXtreamCategory(
+        type: ContentType,
+        rawCategoryId: String?,
+        rawCategoryName: String?
+    ): ResolvedXtreamCategory {
+        val decodedName = decodeXtreamNullableText(rawCategoryName)
+        val parsedId = rawCategoryId?.trim()?.toLongOrNull()
+        if (parsedId != null) {
+            return ResolvedXtreamCategory(
+                id = parsedId,
+                name = decodedName ?: "Category $parsedId"
+            )
+        }
+
+        val fallbackSeed = decodedName ?: rawCategoryId?.trim()?.takeIf { it.isNotBlank() }
+        return if (fallbackSeed != null) {
+            ResolvedXtreamCategory(
+                id = syntheticCategoryId(type, fallbackSeed),
+                name = decodedName ?: "Category ${rawCategoryId?.trim()}"
+            )
+        } else {
+            ResolvedXtreamCategory(id = null, name = null)
+        }
+    }
+
+    private fun syntheticCategoryId(type: ContentType, seed: String): Long {
+        val normalized = "$providerId/${type.name}/${seed.trim().lowercase(Locale.ROOT)}"
+        return (normalized.hashCode().toLong() and 0x7fff_ffffL).coerceAtLeast(1L)
+    }
+
     private fun tryBase64Decode(value: String): String = try {
-        if (value.isBlank()) value
-        else {
-            val decoded = String(Base64.getDecoder().decode(value), Charsets.UTF_8)
+        val normalized = value.trim()
+        if (
+            normalized.isBlank() ||
+            normalized.length % 4 != 0 ||
+            !XTREAM_BASE64_REGEX.matches(normalized)
+        ) {
+            value
+        } else {
+            val decoded = String(Base64.getDecoder().decode(normalized), Charsets.UTF_8)
             if (decoded.any { it.isLetterOrDigit() }) decoded else value
         }
     } catch (_: Exception) {
@@ -604,3 +899,5 @@ private val XTREAM_LOCAL_DATE_FORMATTERS: List<DateTimeFormatter> = listOf(
         .toFormatter(Locale.ROOT)
         .withResolverStyle(ResolverStyle.SMART)
 )
+
+private val XTREAM_BASE64_REGEX = Regex("^[A-Za-z0-9+/]+={0,2}$")

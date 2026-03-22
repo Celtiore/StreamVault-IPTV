@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -95,6 +96,8 @@ fun FullEpgScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedProgram by remember { mutableStateOf<Pair<Channel, Program>?>(null) }
     var showAdvancedOptions by rememberSaveable { mutableStateOf(false) }
+    var showSearchBar by rememberSaveable { mutableStateOf(false) }
+    var showCategoryPicker by rememberSaveable { mutableStateOf(false) }
     val now = rememberGuideNow()
     val returnRoute = remember(uiState.selectedCategoryId, uiState.guideAnchorTime, uiState.showFavoritesOnly) {
         Routes.epg(
@@ -127,76 +130,49 @@ fun FullEpgScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (uiState.error == null) {
-                GuideFilterRow(
-                    categories = uiState.categories,
-                    selectedCategoryId = uiState.selectedCategoryId,
-                    onCategorySelected = viewModel::selectCategory
-                )
-
-                GuideProgramSearchRow(
-                    query = uiState.programSearchQuery,
-                    onQueryChange = viewModel::updateProgramSearchQuery,
-                    onClear = viewModel::clearProgramSearch
-                )
-
-                GuideTimeControlsRow(
+                GuideHeaderDeck(
+                    uiState = uiState,
+                    showSearchBar = showSearchBar || uiState.programSearchQuery.isNotBlank(),
+                    showAdvancedOptions = showAdvancedOptions,
+                    onToggleSearch = { showSearchBar = !showSearchBar },
+                    onOpenCategoryPicker = { showCategoryPicker = true },
+                    onToggleAdvancedOptions = { showAdvancedOptions = !showAdvancedOptions },
+                    onProgramSearchQueryChange = viewModel::updateProgramSearchQuery,
+                    onClearProgramSearch = viewModel::clearProgramSearch,
                     onJumpToPreviousDay = viewModel::jumpToPreviousDay,
-                    onPageBackward = viewModel::pageBackward,
-                    onJumpBackwardHalfHour = viewModel::jumpBackwardHalfHour,
                     onJumpBackward = viewModel::jumpBackward,
                     onJumpToNow = viewModel::jumpToNow,
-                    onJumpForwardHalfHour = viewModel::jumpForwardHalfHour,
                     onJumpForward = viewModel::jumpForward,
-                    onPageForward = viewModel::pageForward,
                     onJumpToPrimeTime = viewModel::jumpToPrimeTime,
+                    onJumpToNextDay = viewModel::jumpToNextDay,
+                    onPageBackward = viewModel::pageBackward,
+                    onJumpBackwardHalfHour = viewModel::jumpBackwardHalfHour,
+                    onJumpForwardHalfHour = viewModel::jumpForwardHalfHour,
+                    onPageForward = viewModel::pageForward,
                     onJumpToTomorrow = viewModel::jumpToTomorrow,
-                    onJumpToNextDay = viewModel::jumpToNextDay
+                    onDaySelected = viewModel::jumpToDay,
+                    onModeSelected = viewModel::selectChannelMode,
+                    onDensitySelected = viewModel::selectDensity,
+                    onToggleScheduledOnly = viewModel::toggleScheduledOnly,
+                    onToggleFavoritesOnly = viewModel::toggleFavoritesOnly
                 )
-
-                GuideDayRow(
-                    selectedDayStart = startOfDay(uiState.guideWindowStart + EpgViewModel.LOOKBACK_MS),
-                    onDaySelected = viewModel::jumpToDay
-                )
-
-                GuideOptionsToggleRow(
-                    expanded = showAdvancedOptions,
-                    onToggle = { showAdvancedOptions = !showAdvancedOptions }
-                )
-
-                if (showAdvancedOptions) {
-                    GuideModeRow(
-                        selectedMode = uiState.selectedChannelMode,
-                        onModeSelected = viewModel::selectChannelMode
-                    )
-
-                    GuideDensityRow(
-                        selectedDensity = uiState.selectedDensity,
-                        onDensitySelected = viewModel::selectDensity
-                    )
-
-                    GuideViewOptionsRow(
-                        showScheduledOnly = uiState.showScheduledOnly,
-                        onToggleScheduledOnly = viewModel::toggleScheduledOnly
-                    )
-
-                    GuideFavoritesRow(
-                        showFavoritesOnly = uiState.showFavoritesOnly,
-                        onToggleFavoritesOnly = viewModel::toggleFavoritesOnly
-                    )
-                }
-
-                GuideSummaryCard(uiState = uiState)
             }
 
             when {
                 uiState.isLoading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(stringResource(R.string.epg_loading), color = OnBackground)
                     }
                 }
 
                 uiState.error != null -> {
                     GuideMessageState(
+                        modifier = Modifier.weight(1f),
                         title = when (uiState.error) {
                             EpgViewModel.NO_ACTIVE_PROVIDER -> stringResource(R.string.epg_no_provider)
                             else -> stringResource(R.string.epg_error)
@@ -212,27 +188,26 @@ fun FullEpgScreen(
 
                 uiState.channels.isEmpty() -> {
                     GuideMessageState(
-                        title = if (uiState.programSearchQuery.isNotBlank()) {
-                            stringResource(R.string.epg_no_search_results)
-                        } else if (uiState.selectedCategoryId == ChannelRepository.ALL_CHANNELS_ID) {
-                            if (uiState.showScheduledOnly) {
-                                stringResource(R.string.epg_no_scheduled_channels)
-                            } else {
-                                stringResource(R.string.epg_no_data)
-                            }
-                        } else {
-                            if (uiState.showScheduledOnly) {
-                                stringResource(R.string.epg_no_scheduled_channels)
-                            } else {
+                        modifier = Modifier.weight(1f),
+                        title = when {
+                            uiState.programSearchQuery.isNotBlank() ->
+                                stringResource(R.string.epg_no_search_results)
+                            uiState.totalChannelCount == 0 && uiState.selectedCategoryId != ChannelRepository.ALL_CHANNELS_ID ->
                                 stringResource(R.string.epg_no_channels_in_category)
-                            }
+                            uiState.totalChannelCount == 0 ->
+                                stringResource(R.string.epg_no_data)
+                            else ->
+                                stringResource(R.string.epg_no_scheduled_channels)
                         },
-                        subtitle = if (uiState.programSearchQuery.isNotBlank()) {
-                            stringResource(R.string.epg_search_empty_hint)
-                        } else if (uiState.showScheduledOnly) {
-                            stringResource(R.string.epg_scheduled_only_hint)
-                        } else {
-                            stringResource(R.string.epg_filter_hint)
+                        subtitle = when {
+                            uiState.programSearchQuery.isNotBlank() ->
+                                stringResource(R.string.epg_search_empty_hint)
+                            uiState.totalChannelCount == 0 ->
+                                stringResource(R.string.epg_filter_hint)
+                            uiState.showScheduledOnly ->
+                                stringResource(R.string.epg_scheduled_only_hint)
+                            else ->
+                                stringResource(R.string.epg_stale_warning)
                         },
                         actionLabel = if (uiState.programSearchQuery.isNotBlank()) {
                             stringResource(R.string.epg_clear_search)
@@ -249,6 +224,7 @@ fun FullEpgScreen(
 
                 else -> {
                     EpgGrid(
+                        modifier = Modifier.weight(1f),
                         channels = uiState.channels,
                         favoriteChannelIds = uiState.favoriteChannelIds,
                         programsByChannel = uiState.programsByChannel,
@@ -262,6 +238,18 @@ fun FullEpgScreen(
                 }
             }
         }
+    }
+
+    if (showCategoryPicker) {
+        GuideCategoryPickerDialog(
+            categories = uiState.categories,
+            selectedCategoryId = uiState.selectedCategoryId,
+            onDismiss = { showCategoryPicker = false },
+            onCategorySelected = { categoryId ->
+                showCategoryPicker = false
+                viewModel.selectCategory(categoryId)
+            }
+        )
     }
 
     val dialogState = selectedProgram
@@ -653,19 +641,23 @@ private fun GuideDensityRow(
 private fun GuideProgramSearchRow(
     query: String,
     onQueryChange: (String) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+    showLabel: Boolean = true
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .padding(contentPadding)
     ) {
-        Text(
-            text = stringResource(R.string.epg_search_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = OnSurfaceDim
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        if (showLabel) {
+            Text(
+                text = stringResource(R.string.epg_search_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -725,23 +717,30 @@ private fun GuideModeRow(
 private fun GuideFilterRow(
     categories: List<Category>,
     selectedCategoryId: Long,
-    onCategorySelected: (Long) -> Unit
+    onCategorySelected: (Long) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp),
+    showLabel: Boolean = true
 ) {
     if (categories.isEmpty()) return
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
+            .padding(contentPadding)
     ) {
-        Text(
-            text = stringResource(R.string.epg_filter_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = OnSurfaceDim
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        if (showLabel) {
+            Text(
+                text = stringResource(R.string.epg_filter_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(categories, key = { it.id }) { category ->
+            itemsIndexed(
+                items = categories,
+                key = { index, category -> epgCategoryKey(category, index) }
+            ) { _, category ->
                 Surface(
                     onClick = { onCategorySelected(category.id) },
                     colors = ClickableSurfaceDefaults.colors(
@@ -782,19 +781,23 @@ private fun GuideTimeControlsRow(
     onPageForward: () -> Unit,
     onJumpToPrimeTime: () -> Unit,
     onJumpToTomorrow: () -> Unit,
-    onJumpToNextDay: () -> Unit
+    onJumpToNextDay: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+    showLabel: Boolean = true
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .padding(contentPadding)
     ) {
-        Text(
-            text = stringResource(R.string.epg_time_controls),
-            style = MaterialTheme.typography.labelMedium,
-            color = OnSurfaceDim
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        if (showLabel) {
+            Text(
+                text = stringResource(R.string.epg_time_controls),
+                style = MaterialTheme.typography.labelMedium,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
                 GuideShortcutChip(
@@ -869,7 +872,9 @@ private fun GuideTimeControlsRow(
 @Composable
 private fun GuideDayRow(
     selectedDayStart: Long,
-    onDaySelected: (Long) -> Unit
+    onDaySelected: (Long) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 24.dp, vertical = 4.dp),
+    showLabel: Boolean = true
 ) {
     val dayFormat = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
     val dayAnchors = remember(selectedDayStart) {
@@ -881,14 +886,16 @@ private fun GuideDayRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 4.dp)
+            .padding(contentPadding)
     ) {
-        Text(
-            text = stringResource(R.string.epg_day_selector_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = OnSurfaceDim
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        if (showLabel) {
+            Text(
+                text = stringResource(R.string.epg_day_selector_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = OnSurfaceDim
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(dayAnchors, key = { it }) { dayStart ->
                 val isSelected = dayStart == selectedDayStart
@@ -1100,66 +1107,78 @@ private fun GuideSummaryCard(uiState: EpgUiState) {
         windowFormat.format(Date(uiState.guideWindowEnd))
     )
 
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        GuideSummaryPill(
+            title = stringResource(
+                R.string.epg_showing_channels,
+                uiState.channels.size,
+                uiState.totalChannelCount
+            ),
+            subtitle = stringResource(
+                R.string.epg_schedule_summary,
+                uiState.channelsWithSchedule,
+                uiState.channels.size
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        GuideSummaryPill(
+            title = windowLabel,
+            subtitle = lastUpdatedLabel ?: stringResource(R.string.epg_updated_now),
+            modifier = Modifier.weight(1f)
+        )
+        if (uiState.isGuideStale) {
+            GuideSummaryPill(
+                title = stringResource(R.string.epg_stale_warning),
+                subtitle = uiState.providerSourceLabel.ifBlank { stringResource(R.string.nav_epg) },
+                modifier = Modifier.weight(1f),
+                accent = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuideSummaryPill(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    accent: Color = Primary
+) {
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        colors = SurfaceDefaults.colors(containerColor = SurfaceElevated),
-        shape = RoundedCornerShape(14.dp)
+        modifier = modifier,
+        colors = SurfaceDefaults.colors(containerColor = SurfaceHighlight),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                text = stringResource(
-                    R.string.epg_showing_channels,
-                    uiState.channels.size,
-                    uiState.totalChannelCount
-                ),
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = OnSurface
             )
             Text(
-                text = stringResource(
-                    R.string.epg_schedule_summary,
-                    uiState.channelsWithSchedule,
-                    uiState.channels.size
-                ),
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = OnSurfaceDim
+                color = accent
             )
-            Text(
-                text = windowLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = OnSurfaceDim
-            )
-            if (lastUpdatedLabel != null) {
-                Text(
-                    text = lastUpdatedLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OnSurfaceDim
-                )
-            }
-            if (uiState.isGuideStale) {
-                Text(
-                    text = stringResource(R.string.epg_stale_warning),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
         }
     }
 }
 
 @Composable
 private fun GuideMessageState(
+    modifier: Modifier = Modifier,
     title: String,
     subtitle: String?,
     actionLabel: String?,
     onAction: (() -> Unit)?
 ) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1194,6 +1213,7 @@ private fun GuideMessageState(
 
 @Composable
 fun EpgGrid(
+    modifier: Modifier = Modifier,
     channels: List<Channel>,
     favoriteChannelIds: Set<Long>,
     programsByChannel: Map<String, List<Program>>,
@@ -1211,7 +1231,7 @@ fun EpgGrid(
     }
 
     BoxWithConstraints(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
@@ -1233,7 +1253,10 @@ fun EpgGrid(
                     markerStepMs = markerStepMs
                 )
             }
-            items(channels, key = { it.id }) { channel ->
+            itemsIndexed(
+                items = channels,
+                key = { index, channel -> epgChannelKey(channel, index) }
+            ) { _, channel ->
                 val programs = channel.epgChannelId?.let { programsByChannel[it] } ?: emptyList()
                 EpgRow(
                     channel = channel,
@@ -1640,6 +1663,357 @@ private fun startOfDay(timestamp: Long): Long {
         set(Calendar.MILLISECOND, 0)
     }
     return calendar.timeInMillis
+}
+
+@Composable
+private fun GuideHeaderDeck(
+    uiState: EpgUiState,
+    showSearchBar: Boolean,
+    showAdvancedOptions: Boolean,
+    onToggleSearch: () -> Unit,
+    onOpenCategoryPicker: () -> Unit,
+    onToggleAdvancedOptions: () -> Unit,
+    onProgramSearchQueryChange: (String) -> Unit,
+    onClearProgramSearch: () -> Unit,
+    onJumpToPreviousDay: () -> Unit,
+    onJumpBackward: () -> Unit,
+    onJumpToNow: () -> Unit,
+    onJumpForward: () -> Unit,
+    onJumpToPrimeTime: () -> Unit,
+    onJumpToNextDay: () -> Unit,
+    onPageBackward: () -> Unit,
+    onJumpBackwardHalfHour: () -> Unit,
+    onJumpForwardHalfHour: () -> Unit,
+    onPageForward: () -> Unit,
+    onJumpToTomorrow: () -> Unit,
+    onDaySelected: (Long) -> Unit,
+    onModeSelected: (GuideChannelMode) -> Unit,
+    onDensitySelected: (GuideDensity) -> Unit,
+    onToggleScheduledOnly: () -> Unit,
+    onToggleFavoritesOnly: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        colors = SurfaceDefaults.colors(containerColor = SurfaceElevated),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            GuideSummaryCard(uiState = uiState)
+
+            GuideCategoryLauncherRow(
+                categories = uiState.categories,
+                selectedCategoryId = uiState.selectedCategoryId,
+                onOpenCategoryPicker = onOpenCategoryPicker
+            )
+
+            GuidePrimaryControlsRow(
+                showSearchBar = showSearchBar,
+                showAdvancedOptions = showAdvancedOptions,
+                onJumpToPreviousDay = onJumpToPreviousDay,
+                onJumpBackward = onJumpBackward,
+                onJumpToNow = onJumpToNow,
+                onJumpForward = onJumpForward,
+                onJumpToPrimeTime = onJumpToPrimeTime,
+                onJumpToNextDay = onJumpToNextDay,
+                onOpenCategoryPicker = onOpenCategoryPicker,
+                onToggleSearch = onToggleSearch,
+                onToggleAdvancedOptions = onToggleAdvancedOptions
+            )
+
+            if (showSearchBar) {
+                GuideProgramSearchRow(
+                    query = uiState.programSearchQuery,
+                    onQueryChange = onProgramSearchQueryChange,
+                    onClear = onClearProgramSearch,
+                    contentPadding = PaddingValues(0.dp),
+                    showLabel = false
+                )
+            }
+
+            if (showAdvancedOptions) {
+                GuideTimeControlsRow(
+                    onJumpToPreviousDay = onJumpToPreviousDay,
+                    onPageBackward = onPageBackward,
+                    onJumpBackwardHalfHour = onJumpBackwardHalfHour,
+                    onJumpBackward = onJumpBackward,
+                    onJumpToNow = onJumpToNow,
+                    onJumpForwardHalfHour = onJumpForwardHalfHour,
+                    onJumpForward = onJumpForward,
+                    onPageForward = onPageForward,
+                    onJumpToPrimeTime = onJumpToPrimeTime,
+                    onJumpToTomorrow = onJumpToTomorrow,
+                    onJumpToNextDay = onJumpToNextDay,
+                    contentPadding = PaddingValues(0.dp),
+                    showLabel = false
+                )
+
+                GuideDayRow(
+                    selectedDayStart = startOfDay(uiState.guideWindowStart + EpgViewModel.LOOKBACK_MS),
+                    onDaySelected = onDaySelected,
+                    contentPadding = PaddingValues(0.dp),
+                    showLabel = false
+                )
+
+                GuideModeRow(
+                    selectedMode = uiState.selectedChannelMode,
+                    onModeSelected = onModeSelected
+                )
+
+                GuideDensityRow(
+                    selectedDensity = uiState.selectedDensity,
+                    onDensitySelected = onDensitySelected
+                )
+
+                GuideViewOptionsRow(
+                    showScheduledOnly = uiState.showScheduledOnly,
+                    onToggleScheduledOnly = onToggleScheduledOnly
+                )
+
+                GuideFavoritesRow(
+                    showFavoritesOnly = uiState.showFavoritesOnly,
+                    onToggleFavoritesOnly = onToggleFavoritesOnly
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuidePrimaryControlsRow(
+    showSearchBar: Boolean,
+    showAdvancedOptions: Boolean,
+    onJumpToPreviousDay: () -> Unit,
+    onJumpBackward: () -> Unit,
+    onJumpToNow: () -> Unit,
+    onJumpForward: () -> Unit,
+    onJumpToPrimeTime: () -> Unit,
+    onJumpToNextDay: () -> Unit,
+    onOpenCategoryPicker: () -> Unit,
+    onToggleSearch: () -> Unit,
+    onToggleAdvancedOptions: () -> Unit
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { GuideShortcutChip(label = stringResource(R.string.epg_filter_label), onClick = onOpenCategoryPicker) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_previous_day), onClick = onJumpToPreviousDay) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_jump_back), onClick = onJumpBackward) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_jump_now), onClick = onJumpToNow) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_jump_forward), onClick = onJumpForward) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_jump_prime_time), onClick = onJumpToPrimeTime) }
+        item { GuideShortcutChip(label = stringResource(R.string.epg_next_day), onClick = onJumpToNextDay) }
+        item {
+            GuideShortcutChip(
+                label = if (showSearchBar) stringResource(R.string.epg_clear_search) else stringResource(R.string.epg_search_label),
+                onClick = onToggleSearch
+            )
+        }
+        item {
+            GuideShortcutChip(
+                label = stringResource(if (showAdvancedOptions) R.string.epg_hide_options else R.string.epg_show_options),
+                onClick = onToggleAdvancedOptions
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuideCategoryLauncherRow(
+    categories: List<Category>,
+    selectedCategoryId: Long,
+    onOpenCategoryPicker: () -> Unit
+) {
+    val selectedCategory = remember(categories, selectedCategoryId) {
+        categories.firstOrNull { it.id == selectedCategoryId }
+    }
+    Surface(
+        onClick = onOpenCategoryPicker,
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = SurfaceHighlight,
+            focusedContainerColor = SurfaceElevated,
+            contentColor = OnSurface,
+            focusedContentColor = OnSurface
+        ),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(16.dp)),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = BorderStroke(2.dp, FocusBorder),
+                shape = RoundedCornerShape(16.dp)
+            )
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = selectedCategory?.name ?: stringResource(R.string.epg_filter_label),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = OnSurface
+                )
+                Text(
+                    text = "${categories.size} categories",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = OnSurfaceDim
+                )
+            }
+            Text(
+                text = stringResource(R.string.epg_filter_label),
+                style = MaterialTheme.typography.labelLarge,
+                color = Primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun GuideCategoryPickerDialog(
+    categories: List<Category>,
+    selectedCategoryId: Long,
+    onDismiss: () -> Unit,
+    onCategorySelected: (Long) -> Unit
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val filteredCategories = remember(categories, query) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) {
+            categories
+        } else {
+            categories.filter { it.name.contains(trimmed, ignoreCase = true) }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.65f))
+            .clickable(
+                onClick = onDismiss,
+                indication = null,
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.58f)
+                .fillMaxHeight(0.78f),
+            colors = SurfaceDefaults.colors(containerColor = SurfaceElevated),
+            shape = RoundedCornerShape(22.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = stringResource(R.string.epg_filter_label),
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = OnSurface
+                        )
+                        Text(
+                            text = "${filteredCategories.size} matches",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDim
+                        )
+                    }
+                    GuideShortcutChip(
+                        label = stringResource(R.string.epg_hide_options),
+                        onClick = onDismiss
+                    )
+                }
+
+                GuideProgramSearchRow(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onClear = { query = "" },
+                    contentPadding = PaddingValues(0.dp),
+                    showLabel = false
+                )
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    itemsIndexed(
+                        items = filteredCategories,
+                        key = { index, category -> epgCategoryKey(category, index) }
+                    ) { _, category ->
+                        val isSelected = category.id == selectedCategoryId
+                        Surface(
+                            onClick = { onCategorySelected(category.id) },
+                            colors = ClickableSurfaceDefaults.colors(
+                                containerColor = if (isSelected) Primary.copy(alpha = 0.18f) else SurfaceHighlight,
+                                focusedContainerColor = SurfaceElevated,
+                                contentColor = if (isSelected) Primary else OnSurface,
+                                focusedContentColor = OnSurface
+                            ),
+                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                            border = ClickableSurfaceDefaults.border(
+                                focusedBorder = Border(
+                                    border = BorderStroke(2.dp, FocusBorder),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = category.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = if (isSelected) Primary else OnSurface
+                                    )
+                                    if (category.count > 0) {
+                                        Text(
+                                            text = "${category.count} channels",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = OnSurfaceDim
+                                        )
+                                    }
+                                }
+                                if (isSelected) {
+                                    Text(
+                                        text = stringResource(R.string.epg_jump_now),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = Primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun epgCategoryKey(category: Category, index: Int): String {
+    return "category:${category.id}:${category.name.trim()}:$index"
+}
+
+private fun epgChannelKey(channel: Channel, index: Int): String {
+    val epgId = channel.epgChannelId?.trim().orEmpty()
+    return "channel:${channel.id}:${channel.streamId}:${epgId}:${channel.name.trim()}:$index"
 }
 
 @Composable

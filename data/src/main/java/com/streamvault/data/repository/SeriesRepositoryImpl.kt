@@ -8,11 +8,15 @@ import com.streamvault.data.remote.xtream.XtreamProvider
 import com.streamvault.data.remote.xtream.XtreamStreamUrlResolver
 import com.streamvault.data.security.CredentialCrypto
 import com.streamvault.domain.model.*
+import com.streamvault.domain.model.Result.Success
 import com.streamvault.domain.repository.SeriesRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import com.streamvault.data.util.toFtsPrefixQuery
@@ -21,6 +25,8 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.domain.util.isPlaybackComplete
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Singleton
 
 @Singleton
@@ -46,6 +52,8 @@ class SeriesRepositoryImpl @Inject constructor(
     )
 
     private val xtreamProviderCache = ConcurrentHashMap<Long, CachedXtreamProvider>()
+    private val xtreamCategoryLoadLocks = ConcurrentHashMap<String, Mutex>()
+    private val loadedXtreamCategories = ConcurrentHashMap.newKeySet<String>()
 
     override fun getSeries(providerId: Long): Flow<List<Series>> =
         combine(
@@ -60,45 +68,59 @@ class SeriesRepositoryImpl @Inject constructor(
         }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
 
     override fun getSeriesByCategory(providerId: Long, categoryId: Long): Flow<List<Series>> =
-        combine(
-            seriesDao.getByCategory(providerId, categoryId),
-            preferencesRepository.parentalControlLevel
-        ) { entities: List<SeriesEntity>, level: Int ->
-            if (level == 2) {
-                entities.filter { !it.isUserProtected }
-            } else {
-                entities
-            }
-        }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+        flow {
+            ensureXtreamCategoryLoaded(providerId, categoryId)
+            emitAll(
+                combine(
+                    seriesDao.getByCategory(providerId, categoryId),
+                    preferencesRepository.parentalControlLevel
+                ) { entities: List<SeriesEntity>, level: Int ->
+                    if (level == 2) {
+                        entities.filter { !it.isUserProtected }
+                    } else {
+                        entities
+                    }
+                }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+            )
+        }
 
     override fun getSeriesByCategoryPage(
         providerId: Long,
         categoryId: Long,
         limit: Int,
         offset: Int
-    ): Flow<List<Series>> =
-        combine(
-            seriesDao.getByCategoryPage(providerId, categoryId, limit, offset),
-            preferencesRepository.parentalControlLevel
-        ) { entities: List<SeriesEntity>, level: Int ->
-            if (level == 2) {
-                entities.filter { !it.isUserProtected }
-            } else {
-                entities
-            }
-        }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+    ): Flow<List<Series>> = flow {
+        ensureXtreamCategoryLoaded(providerId, categoryId)
+        emitAll(
+            combine(
+                seriesDao.getByCategoryPage(providerId, categoryId, limit, offset),
+                preferencesRepository.parentalControlLevel
+            ) { entities: List<SeriesEntity>, level: Int ->
+                if (level == 2) {
+                    entities.filter { !it.isUserProtected }
+                } else {
+                    entities
+                }
+            }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+        )
+    }
 
     override fun getSeriesByCategoryPreview(providerId: Long, categoryId: Long, limit: Int): Flow<List<Series>> =
-        combine(
-            seriesDao.getByCategoryPreview(providerId, categoryId, limit),
-            preferencesRepository.parentalControlLevel
-        ) { entities: List<SeriesEntity>, level: Int ->
-            if (level == 2) {
-                entities.filter { !it.isUserProtected }
-            } else {
-                entities
-            }
-        }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+        flow {
+            ensureXtreamCategoryLoaded(providerId, categoryId)
+            emitAll(
+                combine(
+                    seriesDao.getByCategoryPreview(providerId, categoryId, limit),
+                    preferencesRepository.parentalControlLevel
+                ) { entities: List<SeriesEntity>, level: Int ->
+                    if (level == 2) {
+                        entities.filter { !it.isUserProtected }
+                    } else {
+                        entities
+                    }
+                }.map { list: List<SeriesEntity> -> list.map { it.toDomain() } }
+            )
+        }
 
     override fun getCategoryPreviewRows(providerId: Long, limitPerCategory: Int): Flow<Map<Long?, List<Series>>> =
         combine(
@@ -174,41 +196,46 @@ class SeriesRepositoryImpl @Inject constructor(
         seriesDao.getCount(providerId)
 
     override fun browseSeries(query: LibraryBrowseQuery): Flow<PagedResult<Series>> {
-        return combine(
-            seriesBrowseSource(query.providerId, query.categoryId),
-            favoriteDao.getAllByType(ContentType.SERIES.name),
-            playbackHistoryDao.getByProvider(query.providerId)
-        ) { series, favorites, history ->
-            val favoriteIds = favorites
-                .asSequence()
-                .filter { it.groupId == null }
-                .map { it.contentId }
-                .toSet()
-            val inProgressIds = history
-                .asSequence()
-                .filter { it.contentType == ContentType.SERIES || it.contentType == ContentType.SERIES_EPISODE }
-                .filter { it.resumePositionMs > 0L && (it.totalDurationMs <= 0L || !isPlaybackComplete(it.resumePositionMs, it.totalDurationMs)) }
-                .mapNotNull { it.seriesId ?: it.contentId }
-                .toSet()
-            val watchCounts = history
-                .asSequence()
-                .filter { it.contentType == ContentType.SERIES || it.contentType == ContentType.SERIES_EPISODE }
-                .groupBy { it.seriesId ?: it.contentId }
-                .mapValues { (_, entries) -> entries.maxOf { it.watchCount } }
+        return flow {
+            query.categoryId?.let { ensureXtreamCategoryLoaded(query.providerId, it) }
+            emitAll(
+                combine(
+                    seriesBrowseSource(query.providerId, query.categoryId),
+                    favoriteDao.getAllByType(ContentType.SERIES.name),
+                    playbackHistoryDao.getByProvider(query.providerId)
+                ) { series, favorites, history ->
+                    val favoriteIds = favorites
+                        .asSequence()
+                        .filter { it.groupId == null }
+                        .map { it.contentId }
+                        .toSet()
+                    val inProgressIds = history
+                        .asSequence()
+                        .filter { it.contentType == ContentType.SERIES || it.contentType == ContentType.SERIES_EPISODE }
+                        .filter { it.resumePositionMs > 0L && (it.totalDurationMs <= 0L || !isPlaybackComplete(it.resumePositionMs, it.totalDurationMs)) }
+                        .mapNotNull { it.seriesId ?: it.contentId }
+                        .toSet()
+                    val watchCounts = history
+                        .asSequence()
+                        .filter { it.contentType == ContentType.SERIES || it.contentType == ContentType.SERIES_EPISODE }
+                        .groupBy { it.seriesId ?: it.contentId }
+                        .mapValues { (_, entries) -> entries.maxOf { it.watchCount } }
 
-            val browsed = applySeriesBrowseQuery(
-                series = series,
-                query = query,
-                favoriteIds = favoriteIds,
-                inProgressIds = inProgressIds,
-                watchCounts = watchCounts
-            )
+                    val browsed = applySeriesBrowseQuery(
+                        series = series,
+                        query = query,
+                        favoriteIds = favoriteIds,
+                        inProgressIds = inProgressIds,
+                        watchCounts = watchCounts
+                    )
 
-            PagedResult(
-                items = browsed.drop(query.offset).take(query.limit),
-                totalCount = browsed.size,
-                offset = query.offset,
-                limit = query.limit
+                    PagedResult(
+                        items = browsed.drop(query.offset).take(query.limit),
+                        totalCount = browsed.size,
+                        offset = query.offset,
+                        limit = query.limit
+                    )
+                }
             )
         }
     }
@@ -449,6 +476,43 @@ class SeriesRepositoryImpl @Inject constructor(
             .any { value -> value.lowercase().contains(normalizedQuery) }
     }
 
+    private suspend fun ensureXtreamCategoryLoaded(providerId: Long, categoryId: Long) {
+        val key = "$providerId:$categoryId"
+        if (loadedXtreamCategories.contains(key)) return
+        if (seriesDao.getCountByCategory(providerId, categoryId).first() > 0) {
+            loadedXtreamCategories.add(key)
+            return
+        }
+
+        val provider = providerDao.getById(providerId) ?: return
+        if (provider.type != ProviderType.XTREAM_CODES) return
+
+        val lock = xtreamCategoryLoadLocks.getOrPut(key) { Mutex() }
+        lock.withLock {
+            if (loadedXtreamCategories.contains(key)) return
+            if (seriesDao.getCountByCategory(providerId, categoryId).first() > 0) {
+                loadedXtreamCategories.add(key)
+                return
+            }
+
+            runCatching {
+                val xtreamProvider = getOrCreateXtreamProvider(providerId, provider)
+                when (val result = xtreamProvider.getSeriesList(categoryId)) {
+                    is Success -> {
+                        seriesDao.replaceCategory(
+                            providerId,
+                            categoryId,
+                            result.data.map { item -> item.toEntity() }
+                        )
+                        episodeDao.deleteOrphans()
+                        loadedXtreamCategories.add(key)
+                    }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
     private fun seriesFreshnessScore(series: Series): Long =
         series.lastModified
             .takeIf { it > 0L }
@@ -472,7 +536,8 @@ class SeriesRepositoryImpl @Inject constructor(
                         api = xtreamApiService,
                         serverUrl = provider.serverUrl,
                         username = provider.username,
-                        password = decryptedPassword
+                        password = decryptedPassword,
+                        allowedOutputFormats = provider.toDomain().allowedOutputFormats
                     )
                 )
             }
