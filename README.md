@@ -6,6 +6,26 @@ It is designed for large playlists, remote-friendly browsing, fast provider swit
 
 Built for Android TV first, StreamVault focuses on the things generic IPTV apps usually get wrong: D-pad navigation, quick channel movement, large-library organization, and a player that still feels good to use from the couch. Phone and tablet installs are also supported, but the primary UX target is TV.
 
+## Preview
+
+<p align="center">
+	<a href="docs/images/LiveTV.png"><img src="docs/images/LiveTV.png" alt="Live TV" width="88%" /></a>
+</p>
+
+<p align="center">
+	<a href="docs/images/Home.png"><img src="docs/images/Home.png" alt="Home" width="19%" /></a>
+	<a href="docs/images/LiveTV.png"><img src="docs/images/LiveTV.png" alt="Live TV" width="19%" /></a>
+	<a href="docs/images/ChannelView.png"><img src="docs/images/ChannelView.png" alt="Channel Preview" width="19%" /></a>
+	<a href="docs/images/Guide.png"><img src="docs/images/Guide.png" alt="Guide" width="19%" /></a>
+	<a href="docs/images/Movies.png"><img src="docs/images/Movies.png" alt="Movies" width="19%" /></a>
+</p>
+
+<p align="center">
+	<a href="docs/images/MovieInfo.png"><img src="docs/images/MovieInfo.png" alt="Movie Details" width="24%" /></a>
+	<a href="docs/images/SeriesEpisodes.png"><img src="docs/images/SeriesEpisodes.png" alt="Series Episodes" width="24%" /></a>
+	<a href="docs/images/Settings.png"><img src="docs/images/Settings.png" alt="Settings" width="24%" /></a>
+</p>
+
 ## Highlights
 
 - Android TV-first interface with D-pad-friendly focus, navigation, and playback flows
@@ -88,45 +108,11 @@ Built for Android TV first, StreamVault focuses on the things generic IPTV apps 
 ## Quick TV Tips
 
 - Long-press a channel, movie, or series to add it to Favorites or a custom group.
-- Long-press a live category to open category actions such as pin, hide, lock or unlock, and custom-group actions.
+- Long-press a live category to open category actions such as pin, hide, lock or unlock, and custom-group actions like reorder.
 - In Movies and Series, long-press categories or custom groups for hide or group-management actions where available.
 - Long-press a live channel to queue it for Split Screen.
 - Use the number keys on a remote while in the player to jump directly to a channel.
 - While watching a series, open Episodes in the player to switch episodes without backing out to the details page.
-
-## Screenshots
-
-### Home
-
-![Home](docs/images/Home.png)
-
-### Live TV
-
-![Live TV](docs/images/LiveTV.png)
-
-### Channel Preview
-
-![Channel Preview](docs/images/ChannelView.png)
-
-### Movies
-
-![Movies](docs/images/Movies.png)
-
-### Movie Details
-
-![Movie Details](docs/images/MovieInfo.png)
-
-### Series Episodes
-
-![Series Episodes](docs/images/SeriesEpisodes.png)
-
-### Guide
-
-![Guide](docs/images/Guide.png)
-
-### Settings
-
-![Settings](docs/images/Settings.png)
 
 ## Download
 
