@@ -40,12 +40,12 @@ jobs:
           if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_STORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
             mkdir -p keystore
             echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
-            cat > keystore.properties <<EOF
-            storeFile=keystore/release.jks
-            storePassword=$RELEASE_STORE_PASSWORD
-            keyAlias=$RELEASE_KEY_ALIAS
-            keyPassword=$RELEASE_KEY_PASSWORD
-            EOF
+            printf '%s\n' \
+              'storeFile=keystore/release.jks' \
+              "storePassword=$RELEASE_STORE_PASSWORD" \
+              "keyAlias=$RELEASE_KEY_ALIAS" \
+              "keyPassword=$RELEASE_KEY_PASSWORD" \
+              > keystore.properties
             echo "Release signing files prepared."
           else
             echo "No signing secrets configured. Building unsigned release APK."
