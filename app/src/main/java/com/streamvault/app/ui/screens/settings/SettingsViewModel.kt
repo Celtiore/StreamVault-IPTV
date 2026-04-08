@@ -4,10 +4,16 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamvault.app.R
+import com.streamvault.app.BuildConfig
 import com.streamvault.app.tvinput.TvInputChannelSyncManager
 import com.streamvault.app.ui.model.LiveTvChannelMode
 import com.streamvault.app.ui.model.LiveTvQuickFilterVisibilityMode
 import com.streamvault.app.ui.model.VodViewMode
+import com.streamvault.app.update.AppUpdateDownloadState
+import com.streamvault.app.update.AppUpdateDownloadStatus
+import com.streamvault.app.update.AppUpdateInstaller
+import com.streamvault.app.update.GitHubReleaseChecker
+import com.streamvault.app.update.GitHubReleaseInfo
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.data.sync.SyncManager
 import com.streamvault.data.sync.SyncRepairSection
@@ -20,6 +26,7 @@ import com.streamvault.domain.model.Category
 import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.ContentType
+import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.ProviderStatus
 import com.streamvault.domain.model.ProviderType
@@ -46,6 +53,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.math.max
 import javax.inject.Inject
 
 enum class ProviderWarningAction {
@@ -70,7 +78,13 @@ private data class SettingsPreferenceSnapshot(
     val hasParentalPin: Boolean,
     val appLanguage: String,
     val preferredAudioLanguage: String,
+    val playerMediaSessionEnabled: Boolean,
+    val playerDecoderMode: DecoderMode,
     val playerPlaybackSpeed: Float,
+    val playerControlsTimeoutSeconds: Int,
+    val playerLiveOverlayTimeoutSeconds: Int,
+    val playerNoticeTimeoutSeconds: Int,
+    val playerDiagnosticsTimeoutSeconds: Int,
     val subtitleTextScale: Float,
     val subtitleTextColor: Int,
     val subtitleBackgroundColor: Int,
@@ -88,7 +102,29 @@ private data class SettingsPreferenceSnapshot(
     val liveTvQuickFilterVisibilityMode: LiveTvQuickFilterVisibilityMode,
     val liveChannelNumberingMode: ChannelNumberingMode,
     val vodViewMode: VodViewMode,
-    val preventStandbyDuringPlayback: Boolean
+    val preventStandbyDuringPlayback: Boolean,
+    val autoCheckAppUpdates: Boolean,
+    val lastAppUpdateCheckAt: Long?,
+    val cachedAppUpdateVersionName: String?,
+    val cachedAppUpdateVersionCode: Int?,
+    val cachedAppUpdateReleaseUrl: String?,
+    val cachedAppUpdateDownloadUrl: String?,
+    val cachedAppUpdateReleaseNotes: String,
+    val cachedAppUpdatePublishedAt: String?
+)
+
+data class AppUpdateUiModel(
+    val latestVersionName: String? = null,
+    val latestVersionCode: Int? = null,
+    val releaseUrl: String? = null,
+    val downloadUrl: String? = null,
+    val releaseNotes: String = "",
+    val publishedAt: String? = null,
+    val isUpdateAvailable: Boolean = false,
+    val lastCheckedAt: Long? = null,
+    val errorMessage: String? = null,
+    val downloadStatus: AppUpdateDownloadStatus = AppUpdateDownloadStatus.Idle,
+    val downloadedVersionName: String? = null
 )
 
 @HiltViewModel
@@ -106,11 +142,14 @@ class SettingsViewModel @Inject constructor(
     private val playbackHistoryRepository: com.streamvault.domain.repository.PlaybackHistoryRepository,
     private val tvInputChannelSyncManager: TvInputChannelSyncManager,
     private val syncProvider: SyncProvider,
-    private val epgSourceRepository: com.streamvault.domain.repository.EpgSourceRepository
+    private val epgSourceRepository: com.streamvault.domain.repository.EpgSourceRepository,
+    private val gitHubReleaseChecker: GitHubReleaseChecker,
+    private val appUpdateInstaller: AppUpdateInstaller
 ) : ViewModel() {
     private val appContext = application
     private val exportBackup = ExportBackup(backupManager)
     private val importBackup = ImportBackup(backupManager)
+    private var updateCheckInFlight = false
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -131,7 +170,13 @@ class SettingsViewModel @Inject constructor(
                     hasParentalPin = hasParentalPin,
                     appLanguage = "system",
                     preferredAudioLanguage = "auto",
+                    playerMediaSessionEnabled = true,
+                    playerDecoderMode = DecoderMode.AUTO,
                     playerPlaybackSpeed = 1f,
+                    playerControlsTimeoutSeconds = 5,
+                    playerLiveOverlayTimeoutSeconds = 4,
+                    playerNoticeTimeoutSeconds = 6,
+                    playerDiagnosticsTimeoutSeconds = 15,
                     subtitleTextScale = 1f,
                     subtitleTextColor = 0xFFFFFFFF.toInt(),
                     subtitleBackgroundColor = 0x80000000.toInt(),
@@ -149,14 +194,34 @@ class SettingsViewModel @Inject constructor(
                     liveTvQuickFilterVisibilityMode = LiveTvQuickFilterVisibilityMode.ALWAYS_VISIBLE,
                     liveChannelNumberingMode = ChannelNumberingMode.GROUP,
                     vodViewMode = VodViewMode.MODERN,
-                    preventStandbyDuringPlayback = true
+                    preventStandbyDuringPlayback = true,
+                    autoCheckAppUpdates = true,
+                    lastAppUpdateCheckAt = null,
+                    cachedAppUpdateVersionName = null,
+                    cachedAppUpdateVersionCode = null,
+                    cachedAppUpdateReleaseUrl = null,
+                    cachedAppUpdateDownloadUrl = null,
+                    cachedAppUpdateReleaseNotes = "",
+                    cachedAppUpdatePublishedAt = null
                 )
             }.combine(preferencesRepository.appLanguage) { snapshot, language ->
                 snapshot.copy(appLanguage = language)
             }.combine(preferencesRepository.preferredAudioLanguage) { snapshot, preferredAudioLanguage ->
                 snapshot.copy(preferredAudioLanguage = preferredAudioLanguage ?: "auto")
+            }.combine(preferencesRepository.playerMediaSessionEnabled) { snapshot, mediaSessionEnabled ->
+                snapshot.copy(playerMediaSessionEnabled = mediaSessionEnabled)
+            }.combine(preferencesRepository.playerDecoderMode) { snapshot, decoderMode ->
+                snapshot.copy(playerDecoderMode = decoderMode)
             }.combine(preferencesRepository.playerPlaybackSpeed) { snapshot, playerPlaybackSpeed ->
                 snapshot.copy(playerPlaybackSpeed = playerPlaybackSpeed)
+            }.combine(preferencesRepository.playerControlsTimeoutSeconds) { snapshot, timeoutSeconds ->
+                snapshot.copy(playerControlsTimeoutSeconds = timeoutSeconds)
+            }.combine(preferencesRepository.playerLiveOverlayTimeoutSeconds) { snapshot, timeoutSeconds ->
+                snapshot.copy(playerLiveOverlayTimeoutSeconds = timeoutSeconds)
+            }.combine(preferencesRepository.playerNoticeTimeoutSeconds) { snapshot, timeoutSeconds ->
+                snapshot.copy(playerNoticeTimeoutSeconds = timeoutSeconds)
+            }.combine(preferencesRepository.playerDiagnosticsTimeoutSeconds) { snapshot, timeoutSeconds ->
+                snapshot.copy(playerDiagnosticsTimeoutSeconds = timeoutSeconds)
             }.combine(preferencesRepository.playerSubtitleTextScale) { snapshot, subtitleTextScale ->
                 snapshot.copy(subtitleTextScale = subtitleTextScale)
             }.combine(preferencesRepository.playerSubtitleTextColor) { snapshot, subtitleTextColor ->
@@ -195,7 +260,24 @@ class SettingsViewModel @Inject constructor(
                 snapshot.copy(vodViewMode = VodViewMode.fromStorage(vodViewMode))
             }.combine(preferencesRepository.preventStandbyDuringPlayback) { snapshot, preventStandby ->
                 snapshot.copy(preventStandbyDuringPlayback = preventStandby)
+            }.combine(preferencesRepository.autoCheckAppUpdates) { snapshot, autoCheckAppUpdates ->
+                snapshot.copy(autoCheckAppUpdates = autoCheckAppUpdates)
+            }.combine(preferencesRepository.lastAppUpdateCheckTimestamp) { snapshot, lastAppUpdateCheckAt ->
+                snapshot.copy(lastAppUpdateCheckAt = lastAppUpdateCheckAt)
+            }.combine(preferencesRepository.cachedAppUpdateVersionName) { snapshot, versionName ->
+                snapshot.copy(cachedAppUpdateVersionName = versionName)
+            }.combine(preferencesRepository.cachedAppUpdateVersionCode) { snapshot, versionCode ->
+                snapshot.copy(cachedAppUpdateVersionCode = versionCode)
+            }.combine(preferencesRepository.cachedAppUpdateReleaseUrl) { snapshot, releaseUrl ->
+                snapshot.copy(cachedAppUpdateReleaseUrl = releaseUrl)
+            }.combine(preferencesRepository.cachedAppUpdateDownloadUrl) { snapshot, downloadUrl ->
+                snapshot.copy(cachedAppUpdateDownloadUrl = downloadUrl)
+            }.combine(preferencesRepository.cachedAppUpdateReleaseNotes) { snapshot, releaseNotes ->
+                snapshot.copy(cachedAppUpdateReleaseNotes = releaseNotes)
+            }.combine(preferencesRepository.cachedAppUpdatePublishedAt) { snapshot, publishedAt ->
+                snapshot.copy(cachedAppUpdatePublishedAt = publishedAt)
             }.collect { snapshot ->
+                val cachedAppUpdate = snapshot.toCachedAppUpdateUiModel()
                 _uiState.update {
                     it.copy(
                         providers = snapshot.providers,
@@ -204,7 +286,13 @@ class SettingsViewModel @Inject constructor(
                         hasParentalPin = snapshot.hasParentalPin,
                         appLanguage = snapshot.appLanguage,
                         preferredAudioLanguage = snapshot.preferredAudioLanguage,
+                        playerMediaSessionEnabled = snapshot.playerMediaSessionEnabled,
+                        playerDecoderMode = snapshot.playerDecoderMode,
                         playerPlaybackSpeed = snapshot.playerPlaybackSpeed,
+                        playerControlsTimeoutSeconds = snapshot.playerControlsTimeoutSeconds,
+                        playerLiveOverlayTimeoutSeconds = snapshot.playerLiveOverlayTimeoutSeconds,
+                        playerNoticeTimeoutSeconds = snapshot.playerNoticeTimeoutSeconds,
+                        playerDiagnosticsTimeoutSeconds = snapshot.playerDiagnosticsTimeoutSeconds,
                         subtitleTextScale = snapshot.subtitleTextScale,
                         subtitleTextColor = snapshot.subtitleTextColor,
                         subtitleBackgroundColor = snapshot.subtitleBackgroundColor,
@@ -226,10 +314,41 @@ class SettingsViewModel @Inject constructor(
                         liveTvQuickFilterVisibilityMode = snapshot.liveTvQuickFilterVisibilityMode,
                         liveChannelNumberingMode = snapshot.liveChannelNumberingMode,
                         vodViewMode = snapshot.vodViewMode,
-                        preventStandbyDuringPlayback = snapshot.preventStandbyDuringPlayback
+                        preventStandbyDuringPlayback = snapshot.preventStandbyDuringPlayback,
+                        autoCheckAppUpdates = snapshot.autoCheckAppUpdates,
+                        appUpdate = cachedAppUpdate.copy(
+                            downloadStatus = it.appUpdate.downloadStatus,
+                            downloadedVersionName = it.appUpdate.downloadedVersionName,
+                            errorMessage = it.appUpdate.errorMessage
+                        )
                     )
                 }
             }
+        }
+
+        viewModelScope.launch {
+            combine(
+                preferencesRepository.autoCheckAppUpdates,
+                preferencesRepository.lastAppUpdateCheckTimestamp
+            ) { autoCheckEnabled, lastCheckedAt ->
+                autoCheckEnabled to lastCheckedAt
+            }.distinctUntilChanged().collect { (autoCheckEnabled, lastCheckedAt) ->
+                if (autoCheckEnabled && shouldAutoCheckForUpdates(lastCheckedAt)) {
+                    checkForAppUpdates(manual = false)
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            appUpdateInstaller.downloadState.collect { downloadState ->
+                _uiState.update {
+                    it.copy(appUpdate = it.appUpdate.withDownloadState(downloadState))
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            appUpdateInstaller.refreshState()
         }
 
         viewModelScope.launch {
@@ -365,6 +484,37 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setM3uVodClassificationEnabled(providerId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            val provider = providerRepository.getProvider(providerId) ?: return@launch
+            if (provider.type != ProviderType.M3U) return@launch
+            when (
+                val result = providerRepository.updateProvider(
+                    provider.copy(m3uVodClassificationEnabled = enabled)
+                )
+            ) {
+                is Result.Error -> {
+                    _uiState.update { it.copy(userMessage = "Could not save provider setting: ${result.message}") }
+                }
+                else -> {
+                    _uiState.update {
+                        it.copy(
+                            userMessage = if (enabled) {
+                                "M3U VOD classification enabled. Refresh the playlist to reclassify content."
+                            } else {
+                                "M3U VOD classification disabled. Refresh the playlist to reclassify content."
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshProviderClassification(providerId: Long) {
+        refreshProvider(providerId)
+    }
+
     fun setParentalControlLevel(level: Int) {
         viewModelScope.launch {
             preferencesRepository.setParentalControlLevel(level)
@@ -442,6 +592,51 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setAutoCheckAppUpdates(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setAutoCheckAppUpdates(enabled)
+        }
+    }
+
+    fun checkForAppUpdates() {
+        checkForAppUpdates(manual = true)
+    }
+
+    fun downloadLatestUpdate() {
+        val latestRelease = _uiState.value.appUpdate.toReleaseInfoOrNull() ?: run {
+            _uiState.update {
+                it.copy(userMessage = appContext.getString(R.string.settings_update_download_unavailable))
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            when (val result = appUpdateInstaller.startDownload(latestRelease)) {
+                is Result.Error -> _uiState.update {
+                    it.copy(userMessage = result.message)
+                }
+                is Result.Success -> _uiState.update {
+                    it.copy(userMessage = appContext.getString(R.string.settings_update_download_started))
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun installDownloadedUpdate() {
+        viewModelScope.launch {
+            when (val result = appUpdateInstaller.installDownloadedUpdate()) {
+                is Result.Error -> _uiState.update {
+                    it.copy(userMessage = result.message)
+                }
+                is Result.Success -> _uiState.update {
+                    it.copy(userMessage = appContext.getString(R.string.settings_update_install_started))
+                }
+                else -> Unit
+            }
+        }
+    }
+
     fun setCategorySortMode(type: ContentType, mode: CategorySortMode) {
         val providerId = _uiState.value.activeProviderId ?: return
         viewModelScope.launch {
@@ -465,6 +660,42 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultPlaybackSpeed(speed: Float) {
         viewModelScope.launch {
             preferencesRepository.setPlayerPlaybackSpeed(speed)
+        }
+    }
+
+    fun setPlayerMediaSessionEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerMediaSessionEnabled(enabled)
+        }
+    }
+
+    fun setPlayerDecoderMode(mode: DecoderMode) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerDecoderMode(mode)
+        }
+    }
+
+    fun setPlayerControlsTimeoutSeconds(seconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerControlsTimeoutSeconds(seconds)
+        }
+    }
+
+    fun setPlayerLiveOverlayTimeoutSeconds(seconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerLiveOverlayTimeoutSeconds(seconds)
+        }
+    }
+
+    fun setPlayerNoticeTimeoutSeconds(seconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerNoticeTimeoutSeconds(seconds)
+        }
+    }
+
+    fun setPlayerDiagnosticsTimeoutSeconds(seconds: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setPlayerDiagnosticsTimeoutSeconds(seconds)
         }
     }
 
@@ -771,6 +1002,107 @@ class SettingsViewModel @Inject constructor(
 
     fun userMessageShown() {
         _uiState.update { it.copy(userMessage = null) }
+    }
+
+    private fun checkForAppUpdates(manual: Boolean) {
+        if (updateCheckInFlight) return
+        updateCheckInFlight = true
+        viewModelScope.launch {
+            val checkedAt = System.currentTimeMillis()
+            _uiState.update {
+                it.copy(
+                    isCheckingForUpdates = true,
+                    appUpdate = it.appUpdate.copy(errorMessage = null)
+                )
+            }
+            preferencesRepository.setLastAppUpdateCheckTimestamp(checkedAt)
+            when (val result = gitHubReleaseChecker.fetchLatestRelease()) {
+                is Result.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            isCheckingForUpdates = false,
+                            userMessage = if (manual) result.message else it.userMessage,
+                            appUpdate = it.appUpdate.copy(
+                                lastCheckedAt = checkedAt,
+                                errorMessage = result.message
+                            )
+                        )
+                    }
+                }
+                is Result.Success -> {
+                    val release = result.data
+                    preferencesRepository.setCachedAppUpdateRelease(
+                        versionName = release.versionName,
+                        versionCode = release.versionCode,
+                        releaseUrl = release.releaseUrl,
+                        downloadUrl = release.downloadUrl,
+                        releaseNotes = release.releaseNotes,
+                        publishedAt = release.publishedAt
+                    )
+                    val updateAvailable = isRemoteVersionNewer(
+                        remoteVersionCode = release.versionCode,
+                        remoteVersionName = release.versionName
+                    )
+                    _uiState.update {
+                        it.copy(
+                            isCheckingForUpdates = false,
+                            userMessage = if (manual) {
+                                if (updateAvailable) {
+                                    appContext.getString(R.string.settings_update_available_message, release.versionName)
+                                } else {
+                                    appContext.getString(R.string.settings_update_current_message)
+                                }
+                            } else {
+                                it.userMessage
+                            },
+                            appUpdate = AppUpdateUiModel(
+                                latestVersionName = release.versionName,
+                                latestVersionCode = release.versionCode,
+                                releaseUrl = release.releaseUrl,
+                                downloadUrl = release.downloadUrl,
+                                releaseNotes = release.releaseNotes,
+                                publishedAt = release.publishedAt,
+                                isUpdateAvailable = updateAvailable,
+                                lastCheckedAt = checkedAt,
+                                errorMessage = null
+                            ).withDownloadState(it.appUpdate.toDownloadState())
+                        )
+                    }
+                    appUpdateInstaller.refreshState()
+                }
+                else -> {
+                    _uiState.update { it.copy(isCheckingForUpdates = false) }
+                }
+            }
+            updateCheckInFlight = false
+        }
+    }
+
+    private fun shouldAutoCheckForUpdates(lastCheckedAt: Long?): Boolean {
+        val now = System.currentTimeMillis()
+        val checkIntervalMs = 24L * 60L * 60L * 1000L
+        return lastCheckedAt == null || now - lastCheckedAt >= checkIntervalMs
+    }
+
+    private fun isRemoteVersionNewer(remoteVersionCode: Int?, remoteVersionName: String): Boolean {
+        if (remoteVersionCode != null && remoteVersionCode > BuildConfig.VERSION_CODE) {
+            return true
+        }
+        return compareVersionNames(remoteVersionName, BuildConfig.VERSION_NAME) > 0
+    }
+
+    private fun compareVersionNames(left: String, right: String): Int {
+        val leftParts = left.removePrefix("v").split('.')
+        val rightParts = right.removePrefix("v").split('.')
+        val length = max(leftParts.size, rightParts.size)
+        for (index in 0 until length) {
+            val leftValue = leftParts.getOrNull(index)?.toIntOrNull() ?: 0
+            val rightValue = rightParts.getOrNull(index)?.toIntOrNull() ?: 0
+            if (leftValue != rightValue) {
+                return leftValue.compareTo(rightValue)
+            }
+        }
+        return 0
     }
 
     fun exportConfig(uriString: String) {
@@ -1102,7 +1434,13 @@ data class SettingsUiState(
     val hasParentalPin: Boolean = false,
     val appLanguage: String = "system",
     val preferredAudioLanguage: String = "auto",
+    val playerMediaSessionEnabled: Boolean = true,
+    val playerDecoderMode: DecoderMode = DecoderMode.AUTO,
     val playerPlaybackSpeed: Float = 1f,
+    val playerControlsTimeoutSeconds: Int = 5,
+    val playerLiveOverlayTimeoutSeconds: Int = 4,
+    val playerNoticeTimeoutSeconds: Int = 6,
+    val playerDiagnosticsTimeoutSeconds: Int = 15,
     val subtitleTextScale: Float = 1f,
     val subtitleTextColor: Int = 0xFFFFFFFF.toInt(),
     val subtitleBackgroundColor: Int = 0x80000000.toInt(),
@@ -1127,8 +1465,72 @@ data class SettingsUiState(
     val hiddenCategories: List<Category> = emptyList(),
     val epgSources: List<com.streamvault.domain.model.EpgSource> = emptyList(),
     val epgSourceAssignments: Map<Long, List<com.streamvault.domain.model.ProviderEpgSourceAssignment>> = emptyMap(),
-    val epgResolutionSummaries: Map<Long, EpgResolutionSummary> = emptyMap()
+    val epgResolutionSummaries: Map<Long, EpgResolutionSummary> = emptyMap(),
+    val autoCheckAppUpdates: Boolean = true,
+    val isCheckingForUpdates: Boolean = false,
+    val appUpdate: AppUpdateUiModel = AppUpdateUiModel()
 )
+
+private fun AppUpdateUiModel.toReleaseInfoOrNull(): GitHubReleaseInfo? {
+    val versionName = latestVersionName ?: return null
+    val releaseUrl = releaseUrl ?: return null
+    return GitHubReleaseInfo(
+        versionName = versionName,
+        versionCode = latestVersionCode,
+        releaseUrl = releaseUrl,
+        downloadUrl = downloadUrl,
+        releaseNotes = releaseNotes,
+        publishedAt = publishedAt
+    )
+}
+
+private fun AppUpdateUiModel.withDownloadState(downloadState: AppUpdateDownloadState): AppUpdateUiModel {
+    return copy(
+        downloadStatus = downloadState.status,
+        downloadedVersionName = downloadState.versionName
+    )
+}
+
+private fun AppUpdateUiModel.toDownloadState(): AppUpdateDownloadState {
+    return AppUpdateDownloadState(
+        status = downloadStatus,
+        versionName = downloadedVersionName
+    )
+}
+
+private fun SettingsPreferenceSnapshot.toCachedAppUpdateUiModel(): AppUpdateUiModel {
+    val versionName = cachedAppUpdateVersionName
+    return AppUpdateUiModel(
+        latestVersionName = versionName,
+        latestVersionCode = cachedAppUpdateVersionCode,
+        releaseUrl = cachedAppUpdateReleaseUrl,
+        downloadUrl = cachedAppUpdateDownloadUrl,
+        releaseNotes = cachedAppUpdateReleaseNotes,
+        publishedAt = cachedAppUpdatePublishedAt,
+        isUpdateAvailable = versionName?.let {
+            if (cachedAppUpdateVersionCode != null && cachedAppUpdateVersionCode > BuildConfig.VERSION_CODE) {
+                true
+            } else {
+                compareVersionNamesStatic(it, BuildConfig.VERSION_NAME) > 0
+            }
+        } ?: false,
+        lastCheckedAt = lastAppUpdateCheckAt
+    )
+}
+
+private fun compareVersionNamesStatic(left: String, right: String): Int {
+    val leftParts = left.removePrefix("v").split('.')
+    val rightParts = right.removePrefix("v").split('.')
+    val length = max(leftParts.size, rightParts.size)
+    for (index in 0 until length) {
+        val leftValue = leftParts.getOrNull(index)?.toIntOrNull() ?: 0
+        val rightValue = rightParts.getOrNull(index)?.toIntOrNull() ?: 0
+        if (leftValue != rightValue) {
+            return leftValue.compareTo(rightValue)
+        }
+    }
+    return 0
+}
 
 private fun ProviderSyncSelection.label(application: Application): String = when (this) {
     ProviderSyncSelection.ALL -> application.getString(R.string.settings_sync_option_all)

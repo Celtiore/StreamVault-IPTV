@@ -62,6 +62,7 @@ class ProviderSetupViewModel @Inject constructor(
                         m3uUrl = provider.m3uUrl,
                         epgSyncMode = provider.epgSyncMode,
                         xtreamFastSyncEnabled = provider.xtreamFastSyncEnabled,
+                        m3uVodClassificationEnabled = provider.m3uVodClassificationEnabled,
                         selectedTab = if (provider.type == ProviderType.M3U) 1 else 0,
                         m3uTab = if (provider.m3uUrl.startsWith("file://")) 1 else 0
                     )
@@ -76,6 +77,10 @@ class ProviderSetupViewModel @Inject constructor(
 
     fun updateXtreamFastSyncEnabled(enabled: Boolean) {
         _uiState.update { it.copy(xtreamFastSyncEnabled = enabled) }
+    }
+
+    fun updateM3uVodClassificationEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(m3uVodClassificationEnabled = enabled) }
     }
 
     fun updateEpgSyncMode(mode: ProviderEpgSyncMode) {
@@ -165,6 +170,7 @@ class ProviderSetupViewModel @Inject constructor(
                     url = url,
                     name = name,
                     epgSyncMode = _uiState.value.epgSyncMode,
+                    m3uVodClassificationEnabled = _uiState.value.m3uVodClassificationEnabled,
                     existingProviderId = existingId
                 ),
                 onProgress = { msg -> _uiState.update { it.copy(syncProgress = msg) } }
@@ -217,5 +223,6 @@ data class ProviderSetupState(
     val password: String = "",
     val m3uUrl: String = "",
     val epgSyncMode: ProviderEpgSyncMode = ProviderEpgSyncMode.UPFRONT,
-    val xtreamFastSyncEnabled: Boolean = true
+    val xtreamFastSyncEnabled: Boolean = true,
+    val m3uVodClassificationEnabled: Boolean = true
 )

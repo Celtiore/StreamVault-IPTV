@@ -145,20 +145,20 @@ class EpgSourceRepositoryImpl @Inject constructor(
                 priority = priority
             )
         )
-        resolveForProvider(providerId)
+        resolveForProvider(providerId, emptySet())
         return Result.success(Unit)
     }
 
     override suspend fun unassignSourceFromProvider(providerId: Long, epgSourceId: Long) {
         providerEpgSourceDao.delete(providerId, epgSourceId)
-        resolveForProvider(providerId)
+        resolveForProvider(providerId, emptySet())
     }
 
     override suspend fun updateAssignmentPriority(providerId: Long, epgSourceId: Long, priority: Int) {
         val assignments = providerEpgSourceDao.getForProviderSync(providerId)
         val target = assignments.find { it.epgSourceId == epgSourceId } ?: return
         providerEpgSourceDao.update(target.copy(priority = priority))
-        resolveForProvider(providerId)
+        resolveForProvider(providerId, emptySet())
     }
 
     // ── Refresh / Ingestion ────────────────────────────────────────
@@ -318,8 +318,11 @@ class EpgSourceRepositoryImpl @Inject constructor(
 
     // ── Resolution ─────────────────────────────────────────────────
 
-    override suspend fun resolveForProvider(providerId: Long): EpgResolutionSummary =
-        resolutionEngine.resolveForProvider(providerId)
+    override suspend fun resolveForProvider(
+        providerId: Long,
+        hiddenLiveCategoryIds: Set<Long>
+    ): EpgResolutionSummary =
+        resolutionEngine.resolveForProvider(providerId, hiddenLiveCategoryIds)
 
     override suspend fun getResolutionSummary(providerId: Long): EpgResolutionSummary =
         resolutionEngine.getResolutionSummary(providerId)
@@ -403,7 +406,7 @@ class EpgSourceRepositoryImpl @Inject constructor(
         if (!existing.isManualOverride) {
             return Result.success(Unit)
         }
-        resolveForProvider(providerId)
+        resolveForProvider(providerId, emptySet())
         return Result.success(Unit)
     }
 
@@ -423,7 +426,7 @@ class EpgSourceRepositoryImpl @Inject constructor(
             .filter { it > 0L }
             .distinct()
             .forEach { providerId ->
-                resolveForProvider(providerId)
+                resolveForProvider(providerId, emptySet())
             }
     }
 }

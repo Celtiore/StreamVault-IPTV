@@ -45,6 +45,7 @@ interface PlayerEngine {
     fun seekForward(ms: Long = 10_000)
     fun seekBackward(ms: Long = 10_000)
     fun setDecoderMode(mode: DecoderMode)
+    fun setMediaSessionEnabled(enabled: Boolean)
     fun setVolume(volume: Float)
     fun setMuted(muted: Boolean)
     fun setPlaybackSpeed(speed: Float)

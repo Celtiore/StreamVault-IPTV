@@ -167,6 +167,7 @@ class ProviderRepositoryImpl @Inject constructor(
         url: String,
         name: String,
         epgSyncMode: ProviderEpgSyncMode,
+        m3uVodClassificationEnabled: Boolean,
         onProgress: ((String) -> Unit)?,
         id: Long?
     ): Result<Provider> = try {
@@ -196,6 +197,7 @@ class ProviderRepositoryImpl @Inject constructor(
                 serverUrl = normalizedUrl,
                 m3uUrl = normalizedUrl,
                 epgSyncMode = epgSyncMode,
+                m3uVodClassificationEnabled = m3uVodClassificationEnabled,
                 isActive = true,
                 lastSyncedAt = 0
             )
@@ -208,6 +210,7 @@ class ProviderRepositoryImpl @Inject constructor(
                 serverUrl = normalizedUrl,
                 m3uUrl = normalizedUrl,
                 epgSyncMode = epgSyncMode,
+                m3uVodClassificationEnabled = m3uVodClassificationEnabled,
                 status = ProviderStatus.ACTIVE
             )
             val newId = providerDao.insert(provider.toSecureEntity())

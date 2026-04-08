@@ -80,6 +80,20 @@ class Media3PlayerEngine @Inject constructor(
             audioFocusController.bypassAudioFocus = value
         }
     var enableMediaSession: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value) {
+                exoPlayer?.let { player ->
+                    if (mediaSession == null) {
+                        mediaSession = MediaSession.Builder(context, player).build()
+                    }
+                }
+            } else {
+                mediaSession?.release()
+                mediaSession = null
+            }
+        }
 
     private var supervisorJob = SupervisorJob()
     private var scope = CoroutineScope(Dispatchers.Main.immediate + supervisorJob)
@@ -212,6 +226,10 @@ class Media3PlayerEngine @Inject constructor(
             val position = exoPlayer?.currentPosition
             prepareInternal(streamInfo, preserveRetryState = false, seekPositionMs = position, autoPlay = wasPlaying)
         }
+    }
+
+    override fun setMediaSessionEnabled(enabled: Boolean) {
+        enableMediaSession = enabled
     }
 
     override fun setVolume(volume: Float) {
@@ -495,10 +513,11 @@ class Media3PlayerEngine @Inject constructor(
         }
 
         return baseFactory.apply {
+            setEnableDecoderFallback(true)
             setExtensionRendererMode(
                 when (activeDecoderMode) {
-                    DecoderMode.AUTO, DecoderMode.HARDWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
-                    DecoderMode.SOFTWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF
+                    DecoderMode.AUTO, DecoderMode.HARDWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+                    DecoderMode.SOFTWARE -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
                 }
             )
         }

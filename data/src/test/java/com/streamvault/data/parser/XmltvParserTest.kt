@@ -206,6 +206,25 @@ class XmltvParserTest {
     }
 
     @Test
+    fun `parse_textWithBareAmpersand_returnsProgramInRelaxedMode`() {
+        val xml = """
+            <?xml version="1.0"?>
+            <tv>
+              <programme start="20250101120000 +0000" stop="20250101130000 +0000" channel="ch1">
+                <title>Law &amp; Order</title>
+                <desc>Tom & Jerry investigate</desc>
+              </programme>
+            </tv>
+        """.trimIndent()
+
+        val programs = parser.parse(xml.byteInputStream())
+
+        assertThat(programs).hasSize(1)
+        assertThat(programs.single().title).isEqualTo("Law & Order")
+        assertThat(programs.single().description).contains("Tom")
+    }
+
+    @Test
     fun `parse_sameInstance_isStableAcrossConcurrentCalls`() = runTest {
         val xml = """
           <?xml version="1.0"?>
@@ -320,6 +339,33 @@ class XmltvParserTest {
 
         assertThat(channels).isEmpty()
         assertThat(programmes).isEmpty()
+    }
+
+    @Test
+    fun `parseStreamingWithChannels_textWithBareAmpersand_returnsProgramme`() = runTest {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <tv>
+              <channel id="ch1">
+                <display-name>BBC One</display-name>
+              </channel>
+              <programme start="20250101120000 +0000" stop="20250101130000 +0000" channel="ch1">
+                <title>Fish & Chips</title>
+                <desc>Salt & vinegar special</desc>
+              </programme>
+            </tv>
+        """.trimIndent()
+
+        val programmes = mutableListOf<XmltvProgramme>()
+        parser.parseStreamingWithChannels(
+            inputStream = xml.byteInputStream(),
+            onChannel = { },
+            onProgramme = { programmes.add(it) }
+        )
+
+        assertThat(programmes).hasSize(1)
+        assertThat(programmes.single().title).contains("Fish")
+        assertThat(programmes.single().description).contains("Salt")
     }
 
     @Test

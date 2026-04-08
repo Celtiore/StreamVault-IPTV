@@ -253,6 +253,11 @@ class PlayerViewModel @Inject constructor(
     private var pendingCatchUpUrls: List<String> = emptyList()
     private var channelNumberingMode: ChannelNumberingMode = ChannelNumberingMode.GROUP
     private var activeEpgRequestKey: EpgRequestKey? = null
+    private var playerControlsTimeoutMs: Long = 5_000L
+    private var liveOverlayTimeoutMs: Long = 4_000L
+    private var playerNoticeTimeoutMs: Long = 6_000L
+    private var diagnosticsTimeoutMs: Long = 15_000L
+    private var preferredDecoderMode: DecoderMode = DecoderMode.AUTO
 
     private data class EpgRequestKey(
         val providerId: Long,
@@ -325,7 +330,46 @@ class PlayerViewModel @Inject constructor(
                 )
             }.collect(playerEngine::setSubtitleStyle)
         }
+        viewModelScope.launch {
+            combine(
+                preferencesRepository.playerControlsTimeoutSeconds,
+                preferencesRepository.playerLiveOverlayTimeoutSeconds,
+                preferencesRepository.playerNoticeTimeoutSeconds,
+                preferencesRepository.playerDiagnosticsTimeoutSeconds
+            ) { controlsSeconds, liveOverlaySeconds, noticeSeconds, diagnosticsSeconds ->
+                PlayerUiTimeouts(
+                    controlsMs = controlsSeconds * 1000L,
+                    liveOverlayMs = liveOverlaySeconds * 1000L,
+                    noticeMs = noticeSeconds * 1000L,
+                    diagnosticsMs = diagnosticsSeconds * 1000L
+                )
+            }.collect { timeouts ->
+                playerControlsTimeoutMs = timeouts.controlsMs
+                liveOverlayTimeoutMs = timeouts.liveOverlayMs
+                playerNoticeTimeoutMs = timeouts.noticeMs
+                diagnosticsTimeoutMs = timeouts.diagnosticsMs
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.playerMediaSessionEnabled.collect(playerEngine::setMediaSessionEnabled)
+        }
+        viewModelScope.launch {
+            preferencesRepository.playerDecoderMode.collect { mode ->
+                preferredDecoderMode = mode
+                if (!hasRetriedWithSoftwareDecoder) {
+                    playerEngine.setDecoderMode(mode)
+                    updateDecoderMode(mode)
+                }
+            }
+        }
     }
+
+    private data class PlayerUiTimeouts(
+        val controlsMs: Long,
+        val liveOverlayMs: Long,
+        val noticeMs: Long,
+        val diagnosticsMs: Long
+    )
 
     private fun handlePlaybackError(error: PlayerError) {
         val requestVersion = prepareRequestVersion
@@ -926,8 +970,8 @@ class PlayerViewModel @Inject constructor(
             _lastVisitedCategory.value = null
         }
         hasRetriedWithSoftwareDecoder = false
-        playerEngine.setDecoderMode(DecoderMode.AUTO)
-        updateDecoderMode(DecoderMode.AUTO)
+        playerEngine.setDecoderMode(preferredDecoderMode)
+        updateDecoderMode(preferredDecoderMode)
         updateStreamClass(currentStreamClassLabel)
         
         // Reset tried streams for manual switch
@@ -2251,7 +2295,7 @@ class PlayerViewModel @Inject constructor(
         message: String,
         recoveryType: PlayerRecoveryType = PlayerRecoveryType.UNKNOWN,
         actions: List<PlayerNoticeAction> = emptyList(),
-        durationMs: Long = if (actions.isNotEmpty()) 6500L else 3200L,
+        durationMs: Long = playerNoticeTimeoutMs,
         isRetryNotice: Boolean = false
     ) {
         playerNoticeHideJob?.cancel()
@@ -2275,7 +2319,7 @@ class PlayerViewModel @Inject constructor(
         showPlayerNotice(
             message = message,
             recoveryType = PlayerRecoveryType.NETWORK,
-            durationMs = status.delayMs + 1500L,
+            durationMs = maxOf(playerNoticeTimeoutMs, status.delayMs + 1500L),
             isRetryNotice = true
         )
     }
@@ -2300,7 +2344,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel previous job to prevent race condition
         controlsHideJob?.cancel()
         controlsHideJob = viewModelScope.launch {
-            delay(5000)
+            delay(playerControlsTimeoutMs)
             _showControls.value = false
         }
     }
@@ -2319,7 +2363,7 @@ class PlayerViewModel @Inject constructor(
     private fun hideZapOverlayAfterDelay() {
         zapOverlayJob?.cancel()
         zapOverlayJob = viewModelScope.launch {
-            delay(4000)
+            delay(liveOverlayTimeoutMs)
             _showZapOverlay.value = false
         }
     }
@@ -2346,7 +2390,7 @@ class PlayerViewModel @Inject constructor(
         }
         liveOverlayHideJob?.cancel()
         liveOverlayHideJob = viewModelScope.launch {
-            delay(4000)
+            delay(liveOverlayTimeoutMs)
             _showChannelInfoOverlay.value = false
             _showChannelListOverlay.value = false
             _showEpgOverlay.value = false
@@ -2360,7 +2404,7 @@ class PlayerViewModel @Inject constructor(
         }
         diagnosticsHideJob?.cancel()
         diagnosticsHideJob = viewModelScope.launch {
-            delay(15000)
+            delay(diagnosticsTimeoutMs)
             _showDiagnostics.value = false
         }
     }

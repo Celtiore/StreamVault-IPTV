@@ -68,6 +68,8 @@ class BackupManagerImpl @Inject constructor(
                 "appLanguage" to preferencesRepository.appLanguage.first(),
                 "liveTvCategoryFilters" to preferencesRepository.liveTvCategoryFilters.first().joinToString("\n"),
                 "liveTvQuickFilterVisibility" to (preferencesRepository.liveTvQuickFilterVisibility.first() ?: "always"),
+                "playerMediaSessionEnabled" to preferencesRepository.playerMediaSessionEnabled.first().toString(),
+                "playerDecoderMode" to preferencesRepository.playerDecoderMode.first().name,
                 "playerPlaybackSpeed" to preferencesRepository.playerPlaybackSpeed.first().toString(),
                 "preferredAudioLanguage" to (preferencesRepository.preferredAudioLanguage.first() ?: "auto"),
                 "playerSubtitleTextScale" to preferencesRepository.playerSubtitleTextScale.first().toString(),
@@ -296,6 +298,15 @@ class BackupManagerImpl @Inject constructor(
                 prefs["liveTvCategoryFilters"]?.let { preferencesRepository.setLiveTvCategoryFilters(it.split('\n')) }
                 prefs["liveTvQuickFilterVisibility"]?.takeIf { it.isNotBlank() }
                     ?.let { preferencesRepository.setLiveTvQuickFilterVisibility(it) }
+                prefs["playerMediaSessionEnabled"]?.toBooleanStrictOrNull()
+                    ?.let { preferencesRepository.setPlayerMediaSessionEnabled(it) }
+                prefs["playerDecoderMode"]?.takeIf { it.isNotBlank() }?.let { savedMode ->
+                    val decoderMode = com.streamvault.domain.model.DecoderMode.entries
+                        .firstOrNull { entry -> entry.name == savedMode }
+                    if (decoderMode != null) {
+                        preferencesRepository.setPlayerDecoderMode(decoderMode)
+                    }
+                }
                 prefs["playerPlaybackSpeed"]?.toFloatOrNull()?.let { preferencesRepository.setPlayerPlaybackSpeed(it) }
                 preferencesRepository.setPreferredAudioLanguage(prefs["preferredAudioLanguage"])
                 prefs["playerSubtitleTextScale"]?.toFloatOrNull()?.let { preferencesRepository.setPlayerSubtitleTextScale(it) }

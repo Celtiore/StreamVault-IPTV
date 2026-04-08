@@ -172,7 +172,10 @@ fun ParentalControlGroupScreen(
                             onReset = viewModel::resetProtectionChanges
                         )
                         CategoryControlsMode.VISIBILITY -> VisibilitySummaryCard(
-                            hiddenCount = uiState.hiddenCategoryCount
+                            hiddenCount = uiState.hiddenCategoryCount,
+                            visibleCount = uiState.visibleCategoryCount,
+                            onHideAll = viewModel::hideAllCategories,
+                            onUnhideAll = viewModel::unhideAllCategories
                         )
                     }
                 }
@@ -343,7 +346,12 @@ private fun ProtectionSummaryCard(
 }
 
 @Composable
-private fun VisibilitySummaryCard(hiddenCount: Int) {
+private fun VisibilitySummaryCard(
+    hiddenCount: Int,
+    visibleCount: Int,
+    onHideAll: () -> Unit,
+    onUnhideAll: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -361,6 +369,23 @@ private fun VisibilitySummaryCard(hiddenCount: Int) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SettingsActionButton(
+                label = stringResource(R.string.settings_hide_all_categories),
+                enabled = visibleCount > 0,
+                emphasized = true,
+                onClick = onHideAll
+            )
+            SettingsActionButton(
+                label = stringResource(R.string.settings_unhide_all_categories),
+                enabled = hiddenCount > 0,
+                emphasized = false,
+                onClick = onUnhideAll
+            )
+        }
     }
 }
 

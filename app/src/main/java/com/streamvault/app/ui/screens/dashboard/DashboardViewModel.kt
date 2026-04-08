@@ -2,8 +2,10 @@ package com.streamvault.app.ui.screens.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.streamvault.app.BuildConfig
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.data.sync.SyncManager
+import com.streamvault.app.update.AppUpdateInstaller
 import com.streamvault.domain.model.Category
 import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.ContentType
@@ -57,7 +59,8 @@ class DashboardViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val getContinueWatching: GetContinueWatching,
     private val getCustomCategories: GetCustomCategories,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val appUpdateInstaller: AppUpdateInstaller
 ) : ViewModel() {
     private companion object {
         const val FAVORITE_CHANNEL_LIMIT = 12
@@ -118,8 +121,11 @@ class DashboardViewModel @Inject constructor(
                                 liveContext = liveContext,
                                 liveChannelCount = liveChannelCount,
                                 movieCount = movieCount,
-                                seriesCount = seriesCount
+                                seriesCount = seriesCount,
+                                updateNotice = null
                             )
+                        }.combine(observeUpdateNotice().onStart { emit(null) }) { snapshot, updateNotice ->
+                            snapshot.copy(updateNotice = updateNotice)
                         }.combine(syncManager.syncStateForProvider(provider.id).onStart { emit(SyncState.Idle) }) { snapshot, syncState ->
                             DashboardUiState(
                                 provider = provider,
@@ -157,6 +163,7 @@ class DashboardViewModel @Inject constructor(
                                     is SyncState.Error -> listOf(syncState.message)
                                     else -> emptyList()
                                 },
+                                updateNotice = snapshot.updateNotice,
                                 isLoading = false
                             )
                         }
@@ -262,6 +269,31 @@ class DashboardViewModel @Inject constructor(
                 channelMap[id]
             }
         }
+    }
+
+    private fun observeUpdateNotice(): Flow<DashboardUpdateNotice?> = combine(
+        preferencesRepository.cachedAppUpdateVersionName,
+        preferencesRepository.cachedAppUpdateVersionCode,
+        preferencesRepository.downloadedAppUpdateVersionName
+    ) { latestVersionName, latestVersionCode, downloadedVersionName ->
+        if (latestVersionName.isNullOrBlank()) {
+            return@combine null
+        }
+
+        val updateAvailable = if (latestVersionCode != null && latestVersionCode > BuildConfig.VERSION_CODE) {
+            true
+        } else {
+            compareVersionNames(latestVersionName, BuildConfig.VERSION_NAME) > 0
+        }
+
+        if (!updateAvailable) {
+            return@combine null
+        }
+
+        DashboardUpdateNotice(
+            latestVersionName = latestVersionName,
+            installReady = downloadedVersionName == latestVersionName
+        )
     }
 
     private fun buildFeature(
@@ -372,6 +404,40 @@ class DashboardViewModel @Inject constructor(
                 Year.parse(raw, DateTimeFormatter.ofPattern("yyyy")).atDay(1).toEpochDay()
             }.getOrNull()
     }
+
+    private fun compareVersionNames(left: String, right: String): Int {
+        val leftParts = left.removePrefix("v").split('.')
+        val rightParts = right.removePrefix("v").split('.')
+        val length = maxOf(leftParts.size, rightParts.size)
+        for (index in 0 until length) {
+            val leftValue = leftParts.getOrNull(index)?.toIntOrNull() ?: 0
+            val rightValue = rightParts.getOrNull(index)?.toIntOrNull() ?: 0
+            if (leftValue != rightValue) {
+                return leftValue.compareTo(rightValue)
+            }
+        }
+        return 0
+    }
+
+    fun installDownloadedUpdate() {
+        viewModelScope.launch {
+            when (val result = appUpdateInstaller.installDownloadedUpdate()) {
+                is com.streamvault.domain.model.Result.Error -> {
+                    _uiState.value = _uiState.value.copy(userMessage = result.message)
+                }
+                is com.streamvault.domain.model.Result.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = appContext.getString(R.string.settings_update_install_started)
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun userMessageShown() {
+        _uiState.value = _uiState.value.copy(userMessage = null)
+    }
 }
 
 private data class DashboardLiveContext(
@@ -392,7 +458,8 @@ private data class DashboardSnapshot(
     val liveContext: DashboardLiveContext,
     val liveChannelCount: Int,
     val movieCount: Int,
-    val seriesCount: Int
+    val seriesCount: Int,
+    val updateNotice: DashboardUpdateNotice?
 )
 
 data class DashboardUiState(
@@ -407,8 +474,15 @@ data class DashboardUiState(
     val feature: DashboardFeature = DashboardFeature(),
     val providerHealth: DashboardProviderHealth = DashboardProviderHealth(),
     val providerWarnings: List<String> = emptyList(),
+    val updateNotice: DashboardUpdateNotice? = null,
     val stats: DashboardStats = DashboardStats(),
+    val userMessage: String? = null,
     val isLoading: Boolean = true
+)
+
+data class DashboardUpdateNotice(
+    val latestVersionName: String,
+    val installReady: Boolean
 )
 
 data class DashboardProviderHealth(

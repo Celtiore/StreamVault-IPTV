@@ -247,6 +247,7 @@ fun ProviderSetupScreen(
                         onLoginXtream = { viewModel.loginXtream(serverUrl, username, password, name) },
                         onAddM3u = { viewModel.addM3u(m3uUrl, name) },
                         onToggleFastSync = { viewModel.updateXtreamFastSyncEnabled(!uiState.xtreamFastSyncEnabled) },
+                        onToggleM3uVodClassification = { viewModel.updateM3uVodClassificationEnabled(!uiState.m3uVodClassificationEnabled) },
                         onSelectEpgSyncMode = viewModel::updateEpgSyncMode,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
@@ -275,6 +276,7 @@ fun ProviderSetupScreen(
                         onLoginXtream = { viewModel.loginXtream(serverUrl, username, password, name) },
                         onAddM3u = { viewModel.addM3u(m3uUrl, name) },
                         onToggleFastSync = { viewModel.updateXtreamFastSyncEnabled(!uiState.xtreamFastSyncEnabled) },
+                        onToggleM3uVodClassification = { viewModel.updateM3uVodClassificationEnabled(!uiState.m3uVodClassificationEnabled) },
                         onSelectEpgSyncMode = viewModel::updateEpgSyncMode,
                         modifier = Modifier.weight(1f).fillMaxWidth()
                     )
@@ -305,6 +307,7 @@ private fun ProviderFormContent(
     onLoginXtream: () -> Unit,
     onAddM3u: () -> Unit,
     onToggleFastSync: () -> Unit,
+    onToggleM3uVodClassification: () -> Unit,
     onSelectEpgSyncMode: (ProviderEpgSyncMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -371,6 +374,7 @@ private fun ProviderFormContent(
                         sourceType = sourceType,
                         uiState = uiState,
                         onToggleFastSync = onToggleFastSync,
+                        onToggleM3uVodClassification = onToggleM3uVodClassification,
                         onSelectEpgSyncMode = onSelectEpgSyncMode
                     )
                     FormErrors(uiState.validationError, uiState.error)
@@ -395,6 +399,7 @@ private fun ProviderFormContent(
                         sourceType = sourceType,
                         uiState = uiState,
                         onToggleFastSync = onToggleFastSync,
+                        onToggleM3uVodClassification = onToggleM3uVodClassification,
                         onSelectEpgSyncMode = onSelectEpgSyncMode
                     )
                     FormErrors(uiState.validationError, uiState.error)
@@ -424,6 +429,7 @@ private fun ProviderFormContent(
                         sourceType = sourceType,
                         uiState = uiState,
                         onToggleFastSync = onToggleFastSync,
+                        onToggleM3uVodClassification = onToggleM3uVodClassification,
                         onSelectEpgSyncMode = onSelectEpgSyncMode
                     )
                     FormErrors(uiState.validationError, uiState.error)
@@ -447,13 +453,15 @@ private fun AdvancedProviderOptionsSection(
     sourceType: SourceType,
     uiState: ProviderSetupState,
     onToggleFastSync: () -> Unit,
+    onToggleM3uVodClassification: () -> Unit,
     onSelectEpgSyncMode: (ProviderEpgSyncMode) -> Unit
 ) {
     var showAdvancedOptions by rememberSaveable(sourceType) { mutableStateOf(false) }
 
     LaunchedEffect(uiState.isEditing, uiState.epgSyncMode, uiState.xtreamFastSyncEnabled, sourceType) {
-        val hasNonDefaultSelection = uiState.epgSyncMode != ProviderEpgSyncMode.UPFRONT ||
-            (sourceType == SourceType.XTREAM && !uiState.xtreamFastSyncEnabled)
+        val hasNonDefaultSelection = (sourceType == SourceType.XTREAM && uiState.epgSyncMode != ProviderEpgSyncMode.UPFRONT) ||
+            (sourceType == SourceType.XTREAM && !uiState.xtreamFastSyncEnabled) ||
+            (sourceType != SourceType.XTREAM && !uiState.m3uVodClassificationEnabled)
         if (uiState.isEditing && hasNonDefaultSelection) {
             showAdvancedOptions = true
         }
@@ -562,30 +570,79 @@ private fun AdvancedProviderOptionsSection(
                     }
                 }
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Surface, RoundedCornerShape(12.dp))
-                        .border(1.dp, SurfaceHighlight, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = androidx.compose.ui.res.stringResource(R.string.setup_epg_sync_mode_label),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = androidx.compose.ui.res.stringResource(R.string.setup_epg_sync_mode_helper),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = OnSurfaceDim
-                    )
-                    ProviderEpgSyncMode.entries.forEach { mode ->
-                        EpgSyncModeOptionRow(
-                            mode = mode,
-                            selected = uiState.epgSyncMode == mode,
-                            onSelect = { onSelectEpgSyncMode(mode) }
+                if (sourceType != SourceType.XTREAM) {
+                    Surface(
+                        onClick = onToggleM3uVodClassification,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .mouseClickable(onClick = onToggleM3uVodClassification),
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (uiState.m3uVodClassificationEnabled) Primary.copy(alpha = 0.1f) else Surface,
+                            focusedContainerColor = Primary.copy(alpha = 0.22f)
+                        ),
+                        border = ClickableSurfaceDefaults.border(
+                            border = Border(
+                                BorderStroke(
+                                    1.dp,
+                                    if (uiState.m3uVodClassificationEnabled) Primary.copy(alpha = 0.4f) else SurfaceHighlight
+                                )
+                            ),
+                            focusedBorder = Border(BorderStroke(3.dp, PrimaryLight))
+                        ),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = androidx.compose.ui.res.stringResource(R.string.setup_m3u_vod_classification_label),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = androidx.compose.ui.res.stringResource(R.string.setup_m3u_vod_classification_helper),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OnSurfaceDim
+                                )
+                            }
+                            Switch(
+                                checked = uiState.m3uVodClassificationEnabled,
+                                onCheckedChange = { onToggleM3uVodClassification() }
+                            )
+                        }
+                    }
+                }
+
+                if (sourceType == SourceType.XTREAM) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Surface, RoundedCornerShape(12.dp))
+                            .border(1.dp, SurfaceHighlight, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(R.string.setup_epg_sync_mode_label),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary
                         )
+                        Text(
+                            text = androidx.compose.ui.res.stringResource(R.string.setup_epg_sync_mode_helper),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDim
+                        )
+                        ProviderEpgSyncMode.entries.forEach { mode ->
+                            EpgSyncModeOptionRow(
+                                mode = mode,
+                                selected = uiState.epgSyncMode == mode,
+                                onSelect = { onSelectEpgSyncMode(mode) }
+                            )
+                        }
                     }
                 }
             }

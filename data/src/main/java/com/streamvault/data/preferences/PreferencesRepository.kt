@@ -17,6 +17,7 @@ import com.streamvault.data.local.entity.ChannelPreferenceEntity
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ContentType
+import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.manager.ParentalPinVerifier
 import com.streamvault.domain.manager.ParentalControlSessionState
 import com.streamvault.domain.manager.ParentalControlSessionStore
@@ -75,11 +76,17 @@ class PreferencesRepository @Inject constructor(
         val MULTIVIEW_PERFORMANCE_MODE = stringPreferencesKey("multiview_performance_mode")
         val IS_INCOGNITO_MODE = booleanPreferencesKey("is_incognito_mode")
         val PLAYER_MUTED = booleanPreferencesKey("player_muted")
+        val PLAYER_MEDIA_SESSION_ENABLED = booleanPreferencesKey("player_media_session_enabled")
+        val PLAYER_DECODER_MODE = stringPreferencesKey("player_decoder_mode")
         val PLAYER_PLAYBACK_SPEED = stringPreferencesKey("player_playback_speed")
         val PREFERRED_AUDIO_LANGUAGE = stringPreferencesKey("preferred_audio_language")
         val PLAYER_SUBTITLE_TEXT_SCALE = stringPreferencesKey("player_subtitle_text_scale")
         val PLAYER_SUBTITLE_TEXT_COLOR = intPreferencesKey("player_subtitle_text_color")
         val PLAYER_SUBTITLE_BACKGROUND_COLOR = intPreferencesKey("player_subtitle_background_color")
+        val PLAYER_CONTROLS_TIMEOUT_SECONDS = intPreferencesKey("player_controls_timeout_seconds")
+        val PLAYER_LIVE_OVERLAY_TIMEOUT_SECONDS = intPreferencesKey("player_live_overlay_timeout_seconds")
+        val PLAYER_NOTICE_TIMEOUT_SECONDS = intPreferencesKey("player_notice_timeout_seconds")
+        val PLAYER_DIAGNOSTICS_TIMEOUT_SECONDS = intPreferencesKey("player_diagnostics_timeout_seconds")
         val PLAYER_WIFI_MAX_VIDEO_HEIGHT = intPreferencesKey("player_wifi_max_video_height")
         val PLAYER_ETHERNET_MAX_VIDEO_HEIGHT = intPreferencesKey("player_ethernet_max_video_height")
         val LAST_SPEED_TEST_MEGABITS = stringPreferencesKey("last_speed_test_megabits")
@@ -91,6 +98,16 @@ class PreferencesRepository @Inject constructor(
         val RECENT_SEARCH_QUERIES = stringPreferencesKey("recent_search_queries")
         val XTREAM_TEXT_CLASSIFICATION = booleanPreferencesKey("xtream_text_classification")
         val PREVENT_STANDBY_DURING_PLAYBACK = booleanPreferencesKey("prevent_standby_during_playback")
+        val AUTO_CHECK_APP_UPDATES = booleanPreferencesKey("auto_check_app_updates")
+        val LAST_APP_UPDATE_CHECK_TIMESTAMP = longPreferencesKey("last_app_update_check_timestamp")
+        val APP_UPDATE_DOWNLOAD_ID = longPreferencesKey("app_update_download_id")
+        val APP_UPDATE_DOWNLOADED_VERSION_NAME = stringPreferencesKey("app_update_downloaded_version_name")
+        val APP_UPDATE_LATEST_VERSION_NAME = stringPreferencesKey("app_update_latest_version_name")
+        val APP_UPDATE_LATEST_VERSION_CODE = intPreferencesKey("app_update_latest_version_code")
+        val APP_UPDATE_RELEASE_URL = stringPreferencesKey("app_update_release_url")
+        val APP_UPDATE_DOWNLOAD_URL = stringPreferencesKey("app_update_download_url")
+        val APP_UPDATE_RELEASE_NOTES = stringPreferencesKey("app_update_release_notes")
+        val APP_UPDATE_PUBLISHED_AT = stringPreferencesKey("app_update_published_at")
     }
 
     private object ParentalSessionKeys {
@@ -134,6 +151,16 @@ class PreferencesRepository @Inject constructor(
         preferences[PreferencesKeys.PLAYER_MUTED] ?: false
     }
 
+    val playerMediaSessionEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PLAYER_MEDIA_SESSION_ENABLED] ?: true
+    }
+
+    val playerDecoderMode: Flow<DecoderMode> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PLAYER_DECODER_MODE]
+            ?.let { saved -> DecoderMode.entries.firstOrNull { it.name == saved } }
+            ?: DecoderMode.AUTO
+    }
+
     val playerPlaybackSpeed: Flow<Float> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.PLAYER_PLAYBACK_SPEED]
             ?.toFloatOrNull()
@@ -161,6 +188,22 @@ class PreferencesRepository @Inject constructor(
 
     val playerSubtitleBackgroundColor: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.PLAYER_SUBTITLE_BACKGROUND_COLOR] ?: 0x80000000.toInt()
+    }
+
+    val playerControlsTimeoutSeconds: Flow<Int> = context.dataStore.data.map { preferences ->
+        (preferences[PreferencesKeys.PLAYER_CONTROLS_TIMEOUT_SECONDS] ?: 5).coerceIn(2, 60)
+    }
+
+    val playerLiveOverlayTimeoutSeconds: Flow<Int> = context.dataStore.data.map { preferences ->
+        (preferences[PreferencesKeys.PLAYER_LIVE_OVERLAY_TIMEOUT_SECONDS] ?: 4).coerceIn(2, 60)
+    }
+
+    val playerNoticeTimeoutSeconds: Flow<Int> = context.dataStore.data.map { preferences ->
+        (preferences[PreferencesKeys.PLAYER_NOTICE_TIMEOUT_SECONDS] ?: 6).coerceIn(2, 60)
+    }
+
+    val playerDiagnosticsTimeoutSeconds: Flow<Int> = context.dataStore.data.map { preferences ->
+        (preferences[PreferencesKeys.PLAYER_DIAGNOSTICS_TIMEOUT_SECONDS] ?: 15).coerceIn(2, 60)
     }
 
     val playerWifiMaxVideoHeight: Flow<Int?> = context.dataStore.data.map { preferences ->
@@ -240,15 +283,146 @@ class PreferencesRepository @Inject constructor(
         preferences[PreferencesKeys.PREVENT_STANDBY_DURING_PLAYBACK] ?: true
     }
 
+    val autoCheckAppUpdates: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.AUTO_CHECK_APP_UPDATES] ?: true
+    }
+
+    val lastAppUpdateCheckTimestamp: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.LAST_APP_UPDATE_CHECK_TIMESTAMP]?.takeIf { it > 0L }
+    }
+
+    val appUpdateDownloadId: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_DOWNLOAD_ID]?.takeIf { it > 0L }
+    }
+
+    val downloadedAppUpdateVersionName: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_DOWNLOADED_VERSION_NAME]?.takeIf { it.isNotBlank() }
+    }
+
+    val cachedAppUpdateVersionName: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_LATEST_VERSION_NAME]?.takeIf { it.isNotBlank() }
+    }
+
+    val cachedAppUpdateVersionCode: Flow<Int?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_LATEST_VERSION_CODE]
+    }
+
+    val cachedAppUpdateReleaseUrl: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_RELEASE_URL]?.takeIf { it.isNotBlank() }
+    }
+
+    val cachedAppUpdateDownloadUrl: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_DOWNLOAD_URL]?.takeIf { it.isNotBlank() }
+    }
+
+    val cachedAppUpdateReleaseNotes: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_RELEASE_NOTES].orEmpty()
+    }
+
+    val cachedAppUpdatePublishedAt: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.APP_UPDATE_PUBLISHED_AT]?.takeIf { it.isNotBlank() }
+    }
+
     suspend fun setPreventStandbyDuringPlayback(prevent: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.PREVENT_STANDBY_DURING_PLAYBACK] = prevent
         }
     }
 
+    suspend fun setAutoCheckAppUpdates(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.AUTO_CHECK_APP_UPDATES] = enabled
+        }
+    }
+
+    suspend fun setLastAppUpdateCheckTimestamp(timestampMs: Long?) {
+        context.dataStore.edit { preferences ->
+            if (timestampMs == null || timestampMs <= 0L) {
+                preferences.remove(PreferencesKeys.LAST_APP_UPDATE_CHECK_TIMESTAMP)
+            } else {
+                preferences[PreferencesKeys.LAST_APP_UPDATE_CHECK_TIMESTAMP] = timestampMs
+            }
+        }
+    }
+
+    suspend fun setAppUpdateDownloadId(downloadId: Long?) {
+        context.dataStore.edit { preferences ->
+            if (downloadId == null || downloadId <= 0L) {
+                preferences.remove(PreferencesKeys.APP_UPDATE_DOWNLOAD_ID)
+            } else {
+                preferences[PreferencesKeys.APP_UPDATE_DOWNLOAD_ID] = downloadId
+            }
+        }
+    }
+
+    suspend fun setDownloadedAppUpdateVersionName(versionName: String?) {
+        context.dataStore.edit { preferences ->
+            if (versionName.isNullOrBlank()) {
+                preferences.remove(PreferencesKeys.APP_UPDATE_DOWNLOADED_VERSION_NAME)
+            } else {
+                preferences[PreferencesKeys.APP_UPDATE_DOWNLOADED_VERSION_NAME] = versionName
+            }
+        }
+    }
+
+    suspend fun setCachedAppUpdateRelease(
+        versionName: String?,
+        versionCode: Int?,
+        releaseUrl: String?,
+        downloadUrl: String?,
+        releaseNotes: String?,
+        publishedAt: String?
+    ) {
+        context.dataStore.edit { preferences ->
+            if (versionName.isNullOrBlank() || releaseUrl.isNullOrBlank()) {
+                preferences.remove(PreferencesKeys.APP_UPDATE_LATEST_VERSION_NAME)
+                preferences.remove(PreferencesKeys.APP_UPDATE_LATEST_VERSION_CODE)
+                preferences.remove(PreferencesKeys.APP_UPDATE_RELEASE_URL)
+                preferences.remove(PreferencesKeys.APP_UPDATE_DOWNLOAD_URL)
+                preferences.remove(PreferencesKeys.APP_UPDATE_RELEASE_NOTES)
+                preferences.remove(PreferencesKeys.APP_UPDATE_PUBLISHED_AT)
+            } else {
+                preferences[PreferencesKeys.APP_UPDATE_LATEST_VERSION_NAME] = versionName
+                if (versionCode == null) {
+                    preferences.remove(PreferencesKeys.APP_UPDATE_LATEST_VERSION_CODE)
+                } else {
+                    preferences[PreferencesKeys.APP_UPDATE_LATEST_VERSION_CODE] = versionCode
+                }
+                preferences[PreferencesKeys.APP_UPDATE_RELEASE_URL] = releaseUrl
+                if (downloadUrl.isNullOrBlank()) {
+                    preferences.remove(PreferencesKeys.APP_UPDATE_DOWNLOAD_URL)
+                } else {
+                    preferences[PreferencesKeys.APP_UPDATE_DOWNLOAD_URL] = downloadUrl
+                }
+                if (releaseNotes.isNullOrBlank()) {
+                    preferences.remove(PreferencesKeys.APP_UPDATE_RELEASE_NOTES)
+                } else {
+                    preferences[PreferencesKeys.APP_UPDATE_RELEASE_NOTES] = releaseNotes
+                }
+                if (publishedAt.isNullOrBlank()) {
+                    preferences.remove(PreferencesKeys.APP_UPDATE_PUBLISHED_AT)
+                } else {
+                    preferences[PreferencesKeys.APP_UPDATE_PUBLISHED_AT] = publishedAt
+                }
+            }
+        }
+    }
+
     suspend fun setPlayerMuted(muted: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.PLAYER_MUTED] = muted
+        }
+    }
+
+    suspend fun setPlayerMediaSessionEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_MEDIA_SESSION_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setPlayerDecoderMode(mode: DecoderMode) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_DECODER_MODE] = mode.name
         }
     }
 
@@ -286,6 +460,30 @@ class PreferencesRepository @Inject constructor(
     suspend fun setPlayerSubtitleBackgroundColor(colorArgb: Int) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.PLAYER_SUBTITLE_BACKGROUND_COLOR] = colorArgb
+        }
+    }
+
+    suspend fun setPlayerControlsTimeoutSeconds(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_CONTROLS_TIMEOUT_SECONDS] = seconds.coerceIn(2, 60)
+        }
+    }
+
+    suspend fun setPlayerLiveOverlayTimeoutSeconds(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_LIVE_OVERLAY_TIMEOUT_SECONDS] = seconds.coerceIn(2, 60)
+        }
+    }
+
+    suspend fun setPlayerNoticeTimeoutSeconds(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_NOTICE_TIMEOUT_SECONDS] = seconds.coerceIn(2, 60)
+        }
+    }
+
+    suspend fun setPlayerDiagnosticsTimeoutSeconds(seconds: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.PLAYER_DIAGNOSTICS_TIMEOUT_SECONDS] = seconds.coerceIn(2, 60)
         }
     }
 
@@ -658,6 +856,21 @@ class PreferencesRepository @Inject constructor(
                 preferences.remove(key)
             } else {
                 preferences[key] = current.sorted().joinToString(",")
+            }
+        }
+    }
+
+    suspend fun setHiddenCategoryIds(
+        providerId: Long,
+        type: ContentType,
+        categoryIds: Set<Long>
+    ) {
+        val key = stringPreferencesKey(hiddenCategoriesKey(providerId, type))
+        context.dataStore.edit { preferences ->
+            if (categoryIds.isEmpty()) {
+                preferences.remove(key)
+            } else {
+                preferences[key] = categoryIds.sorted().joinToString(",")
             }
         }
     }

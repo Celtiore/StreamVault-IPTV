@@ -53,8 +53,12 @@ class EpgResolutionEngine @Inject constructor(
      *
      * @return summary statistics
      */
-    suspend fun resolveForProvider(providerId: Long): EpgResolutionSummary = withContext(Dispatchers.Default) {
+    suspend fun resolveForProvider(
+        providerId: Long,
+        hiddenLiveCategoryIds: Set<Long> = emptySet()
+    ): EpgResolutionSummary = withContext(Dispatchers.Default) {
         val channels = channelDao.getByProviderSync(providerId)
+            .filterNot { channel -> channel.categoryId != null && channel.categoryId in hiddenLiveCategoryIds }
         if (channels.isEmpty()) {
             channelEpgMappingDao.deleteByProvider(providerId)
             return@withContext EpgResolutionSummary()

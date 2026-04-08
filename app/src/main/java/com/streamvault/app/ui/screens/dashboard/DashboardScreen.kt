@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -95,51 +98,69 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val provider = uiState.provider
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    AppScreenScaffold(
-        currentRoute = currentRoute,
-        onNavigate = onNavigate,
-        title = stringResource(R.string.nav_home),
-        subtitle = provider?.name,
-        navigationChrome = AppNavigationChrome.TopBar,
-        compactHeader = true,
-        showScreenHeader = false
-    ) {
-        if (provider == null) {
-            EmptyDashboard(
-                onAddProvider = onAddProvider,
-                onOpenSettings = { onNavigate(Routes.SETTINGS) }
-            )
-            return@AppScreenScaffold
+    LaunchedEffect(uiState.userMessage) {
+        uiState.userMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.userMessageShown()
         }
-        val orderedSections = rememberDashboardSections(uiState)
+    }
 
-        androidx.compose.foundation.lazy.LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 28.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        AppScreenScaffold(
+            currentRoute = currentRoute,
+            onNavigate = onNavigate,
+            title = stringResource(R.string.nav_home),
+            subtitle = provider?.name,
+            navigationChrome = AppNavigationChrome.TopBar,
+            compactHeader = true,
+            showScreenHeader = false
         ) {
-            if (uiState.isLoading && orderedSections.isEmpty()) {
-                item(key = "dashboard_loading") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 28.dp, bottom = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = Primary)
+            if (provider == null) {
+                EmptyDashboard(
+                    onAddProvider = onAddProvider,
+                    onOpenSettings = { onNavigate(Routes.SETTINGS) }
+                )
+                return@AppScreenScaffold
+            }
+            val orderedSections = rememberDashboardSections(uiState)
+
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 28.dp)
+            ) {
+                if (uiState.isLoading && orderedSections.isEmpty()) {
+                    item(key = "dashboard_loading") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 28.dp, bottom = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = Primary)
+                        }
                     }
                 }
-            }
-            if (uiState.providerWarnings.isNotEmpty()) {
-                item(key = "provider_warnings") {
-                    DashboardProviderWarningCard(
-                        warnings = uiState.providerWarnings,
-                        onOpenSettings = { onNavigate(Routes.SETTINGS) }
-                    )
+                if (uiState.providerWarnings.isNotEmpty()) {
+                    item(key = "provider_warnings") {
+                        DashboardProviderWarningCard(
+                            warnings = uiState.providerWarnings,
+                            onOpenSettings = { onNavigate(Routes.SETTINGS) }
+                        )
+                    }
                 }
-            }
-            items(orderedSections, key = { it.name }) { section ->
-                when (section) {
+                uiState.updateNotice?.let { updateNotice ->
+                    item(key = "update_notice") {
+                        DashboardUpdateCard(
+                            notice = updateNotice,
+                            onOpenSettings = { onNavigate(Routes.SETTINGS) },
+                            onInstallUpdate = viewModel::installDownloadedUpdate
+                        )
+                    }
+                }
+                items(orderedSections, key = { it.name }) { section ->
+                    when (section) {
                     DashboardHomeSection.LIVE_SHORTCUTS -> DashboardShortcutRow(
                         title = stringResource(R.string.dashboard_live_shortcuts),
                         subtitle = stringResource(R.string.dashboard_live_shortcuts_subtitle),
@@ -201,8 +222,15 @@ fun DashboardScreen(
                     }
                 }
             }
-
+            }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
@@ -616,6 +644,62 @@ private fun DashboardProviderWarningCard(
                 DashboardActionButton(
                     label = stringResource(R.string.dashboard_warning_review),
                     onClick = onOpenSettings
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardUpdateCard(
+    notice: DashboardUpdateNotice,
+    onOpenSettings: () -> Unit,
+    onInstallUpdate: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 48.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = SurfaceDefaults.colors(containerColor = Primary.copy(alpha = 0.16f)),
+        border = Border(BorderStroke(1.dp, Primary.copy(alpha = 0.45f)))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.dashboard_update_title, notice.latestVersionName),
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary
+            )
+            Text(
+                text = stringResource(
+                    if (notice.installReady) {
+                        R.string.dashboard_update_install_ready
+                    } else {
+                        R.string.dashboard_update_available
+                    }
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = OnSurfaceDim
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DashboardActionButton(
+                    label = stringResource(
+                        if (notice.installReady) {
+                            R.string.dashboard_update_open_installer
+                        } else {
+                            R.string.dashboard_update_open_settings
+                        }
+                    ),
+                    onClick = {
+                        if (notice.installReady) {
+                            onInstallUpdate()
+                        } else {
+                            onOpenSettings()
+                        }
+                    }
                 )
             }
         }

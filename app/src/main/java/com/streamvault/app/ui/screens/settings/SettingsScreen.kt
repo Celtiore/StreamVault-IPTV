@@ -28,6 +28,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.tv.material3.*
@@ -68,6 +72,7 @@ import com.streamvault.domain.model.Category
 import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.ContentType
+import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.ProviderStatus
@@ -82,7 +87,9 @@ import androidx.compose.ui.text.style.TextAlign
 import com.streamvault.app.R
 import java.util.Locale
 import com.streamvault.app.BuildConfig
+import com.streamvault.app.ui.screens.settings.AppUpdateUiModel
 import com.streamvault.app.ui.interaction.mouseClickable
+import java.text.DateFormat
 
 
 @Composable
@@ -107,6 +114,21 @@ fun SettingsScreen(
     }
     val playbackSpeedLabel = remember(uiState.playerPlaybackSpeed) {
         formatPlaybackSpeedLabel(uiState.playerPlaybackSpeed)
+    }
+    val decoderModeLabel = remember(uiState.playerDecoderMode, context) {
+        formatDecoderModeLabel(uiState.playerDecoderMode, context)
+    }
+    val controlsTimeoutLabel = remember(uiState.playerControlsTimeoutSeconds, context) {
+        formatTimeoutSecondsLabel(uiState.playerControlsTimeoutSeconds, context)
+    }
+    val liveOverlayTimeoutLabel = remember(uiState.playerLiveOverlayTimeoutSeconds, context) {
+        formatTimeoutSecondsLabel(uiState.playerLiveOverlayTimeoutSeconds, context)
+    }
+    val noticeTimeoutLabel = remember(uiState.playerNoticeTimeoutSeconds, context) {
+        formatTimeoutSecondsLabel(uiState.playerNoticeTimeoutSeconds, context)
+    }
+    val diagnosticsTimeoutLabel = remember(uiState.playerDiagnosticsTimeoutSeconds, context) {
+        formatTimeoutSecondsLabel(uiState.playerDiagnosticsTimeoutSeconds, context)
     }
     val subtitleSizeLabel = remember(uiState.subtitleTextScale, context) {
         formatSubtitleSizeLabel(uiState.subtitleTextScale, context)
@@ -155,6 +177,11 @@ fun SettingsScreen(
     var showLiveChannelNumberingDialog by rememberSaveable { mutableStateOf(false) }
     var showVodViewModeDialog by rememberSaveable { mutableStateOf(false) }
     var showPlaybackSpeedDialog by rememberSaveable { mutableStateOf(false) }
+    var showDecoderModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showControlsTimeoutDialog by rememberSaveable { mutableStateOf(false) }
+    var showLiveOverlayTimeoutDialog by rememberSaveable { mutableStateOf(false) }
+    var showNoticeTimeoutDialog by rememberSaveable { mutableStateOf(false) }
+    var showDiagnosticsTimeoutDialog by rememberSaveable { mutableStateOf(false) }
     var showLiveTvFiltersDialog by rememberSaveable { mutableStateOf(false) }
     var showAudioLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var showSubtitleSizeDialog by rememberSaveable { mutableStateOf(false) }
@@ -315,7 +342,13 @@ fun SettingsScreen(
                                     },
                                     onDelete = { viewModel.deleteProvider(selectedProvider.id) },
                                     onEdit = { onEditProvider(selectedProvider) },
-                                    onParentalControl = { onNavigateToParentalControl(selectedProvider.id) }
+                                    onParentalControl = { onNavigateToParentalControl(selectedProvider.id) },
+                                    onToggleM3uVodClassification = { enabled ->
+                                        viewModel.setM3uVodClassificationEnabled(selectedProvider.id, enabled)
+                                    },
+                                    onRefreshM3uClassification = {
+                                        viewModel.refreshProviderClassification(selectedProvider.id)
+                                    }
                                 )
                             }
                         }
@@ -372,6 +405,34 @@ fun SettingsScreen(
                                     Switch(checked = uiState.preventStandbyDuringPlayback, onCheckedChange = { viewModel.setPreventStandbyDuringPlayback(it) })
                                 }
                             }
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.07f), modifier = Modifier.padding(vertical = 4.dp))
+                            TvClickableSurface(
+                                onClick = { viewModel.setPlayerMediaSessionEnabled(!uiState.playerMediaSessionEnabled) },
+                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+                                colors = ClickableSurfaceDefaults.colors(
+                                    containerColor = Color.Transparent,
+                                    focusedContainerColor = Primary.copy(alpha = 0.15f)
+                                ),
+                                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = stringResource(R.string.settings_media_session), style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+                                        Text(text = stringResource(R.string.settings_media_session_subtitle), style = MaterialTheme.typography.bodySmall, color = OnBackground.copy(alpha = 0.6f))
+                                    }
+                                    Switch(checked = uiState.playerMediaSessionEnabled, onCheckedChange = { viewModel.setPlayerMediaSessionEnabled(it) })
+                                }
+                            }
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_decoder_mode),
+                                value = decoderModeLabel,
+                                onClick = { showDecoderModeDialog = true }
+                            )
                             HorizontalDivider(color = Color.White.copy(alpha = 0.07f), modifier = Modifier.padding(vertical = 4.dp))
                             ClickableSettingsRow(
                                 label = stringResource(R.string.settings_live_tv_channel_mode),
@@ -439,6 +500,26 @@ fun SettingsScreen(
                                 label = stringResource(R.string.settings_default_playback_speed),
                                 value = playbackSpeedLabel,
                                 onClick = { showPlaybackSpeedDialog = true }
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_player_controls_timeout),
+                                value = controlsTimeoutLabel,
+                                onClick = { showControlsTimeoutDialog = true }
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_live_overlay_timeout),
+                                value = liveOverlayTimeoutLabel,
+                                onClick = { showLiveOverlayTimeoutDialog = true }
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_player_notice_timeout),
+                                value = noticeTimeoutLabel,
+                                onClick = { showNoticeTimeoutDialog = true }
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_player_diagnostics_timeout),
+                                value = diagnosticsTimeoutLabel,
+                                onClick = { showDiagnosticsTimeoutDialog = true }
                             )
                             ClickableSettingsRow(
                                 label = stringResource(R.string.settings_preferred_audio_language),
@@ -970,7 +1051,71 @@ fun SettingsScreen(
                     // ── 6: About ──────────────────────────────────────────────
                     else {
                         item {
+                            SettingsSectionHeader(
+                                title = stringResource(R.string.settings_updates_title),
+                                subtitle = stringResource(R.string.settings_updates_subtitle)
+                            )
                             SettingsRow(label = stringResource(R.string.settings_app_version), value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                            SwitchSettingsRow(
+                                label = stringResource(R.string.settings_update_auto_check),
+                                value = stringResource(
+                                    if (uiState.autoCheckAppUpdates) R.string.settings_enabled else R.string.settings_disabled
+                                ),
+                                checked = uiState.autoCheckAppUpdates,
+                                onCheckedChange = viewModel::setAutoCheckAppUpdates
+                            )
+                            SettingsRow(
+                                label = stringResource(R.string.settings_update_latest_release),
+                                value = formatLatestReleaseLabel(uiState.appUpdate, context)
+                            )
+                            SettingsRow(
+                                label = stringResource(R.string.settings_update_status),
+                                value = formatUpdateStatusLabel(uiState.appUpdate, context)
+                            )
+                            SettingsRow(
+                                label = stringResource(R.string.settings_update_last_checked),
+                                value = formatUpdateCheckTimeLabel(uiState.appUpdate.lastCheckedAt, context)
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_update_check_now),
+                                value = stringResource(
+                                    if (uiState.isCheckingForUpdates) R.string.settings_update_checking else R.string.settings_update_check_action
+                                ),
+                                onClick = {
+                                    if (!uiState.isCheckingForUpdates) {
+                                        viewModel.checkForAppUpdates()
+                                    }
+                                }
+                            )
+                            if (shouldShowUpdateDownloadAction(uiState.appUpdate)) {
+                                ClickableSettingsRow(
+                                    label = stringResource(R.string.settings_update_download),
+                                    value = formatUpdateDownloadLabel(uiState.appUpdate, context),
+                                    onClick = {
+                                        if (uiState.appUpdate.downloadStatus == com.streamvault.app.update.AppUpdateDownloadStatus.Downloaded) {
+                                            viewModel.installDownloadedUpdate()
+                                        } else if (uiState.appUpdate.downloadStatus != com.streamvault.app.update.AppUpdateDownloadStatus.Downloading) {
+                                            viewModel.downloadLatestUpdate()
+                                        }
+                                    }
+                                )
+                            }
+                            if (!uiState.appUpdate.releaseUrl.isNullOrBlank()) {
+                                ClickableSettingsRow(
+                                    label = stringResource(R.string.settings_update_view_release),
+                                    value = uiState.appUpdate.latestVersionName ?: stringResource(R.string.settings_update_release_notes),
+                                    onClick = { uriHandler.openUri(uiState.appUpdate.releaseUrl.orEmpty()) }
+                                )
+                            }
+                            if (!uiState.appUpdate.errorMessage.isNullOrBlank()) {
+                                SettingsRow(
+                                    label = stringResource(R.string.settings_update_error),
+                                    value = uiState.appUpdate.errorMessage.orEmpty()
+                                )
+                            }
+                        }
+
+                        item {
                             SettingsRow(label = stringResource(R.string.settings_build), value = stringResource(R.string.settings_build_desc))
                             SettingsRow(label = stringResource(R.string.settings_developed_by), value = stringResource(R.string.settings_developer_name))
                             ClickableSettingsRow(
@@ -1099,6 +1244,80 @@ fun SettingsScreen(
                         }
                     )
                 }
+            }
+        }
+
+        if (showDecoderModeDialog) {
+            val decoderOptions = remember(context) {
+                listOf(
+                    DecoderMode.AUTO to context.getString(R.string.settings_decoder_auto),
+                    DecoderMode.HARDWARE to context.getString(R.string.settings_decoder_hardware),
+                    DecoderMode.SOFTWARE to context.getString(R.string.settings_decoder_software)
+                )
+            }
+            PremiumSelectionDialog(
+                title = stringResource(R.string.settings_select_decoder_mode),
+                onDismiss = { showDecoderModeDialog = false }
+            ) {
+                decoderOptions.forEachIndexed { index, option ->
+                    LevelOption(
+                        level = index,
+                        text = option.second,
+                        currentLevel = if (uiState.playerDecoderMode == option.first) index else -1,
+                        onSelect = {
+                            viewModel.setPlayerDecoderMode(option.first)
+                            showDecoderModeDialog = false
+                        }
+                    )
+                }
+            }
+        }
+
+        if (showControlsTimeoutDialog) {
+            TimeoutValueDialog(
+                title = stringResource(R.string.settings_player_controls_timeout),
+                subtitle = stringResource(R.string.settings_timeout_vod_controls_subtitle),
+                initialValue = uiState.playerControlsTimeoutSeconds,
+                onDismiss = { showControlsTimeoutDialog = false }
+            ) { seconds ->
+                viewModel.setPlayerControlsTimeoutSeconds(seconds)
+                showControlsTimeoutDialog = false
+            }
+        }
+
+        if (showLiveOverlayTimeoutDialog) {
+            TimeoutValueDialog(
+                title = stringResource(R.string.settings_live_overlay_timeout),
+                subtitle = stringResource(R.string.settings_timeout_live_overlays_subtitle),
+                initialValue = uiState.playerLiveOverlayTimeoutSeconds,
+                onDismiss = { showLiveOverlayTimeoutDialog = false }
+            ) { seconds ->
+                viewModel.setPlayerLiveOverlayTimeoutSeconds(seconds)
+                showLiveOverlayTimeoutDialog = false
+            }
+        }
+
+        if (showNoticeTimeoutDialog) {
+            TimeoutValueDialog(
+                title = stringResource(R.string.settings_player_notice_timeout),
+                subtitle = stringResource(R.string.settings_timeout_notices_subtitle),
+                initialValue = uiState.playerNoticeTimeoutSeconds,
+                onDismiss = { showNoticeTimeoutDialog = false }
+            ) { seconds ->
+                viewModel.setPlayerNoticeTimeoutSeconds(seconds)
+                showNoticeTimeoutDialog = false
+            }
+        }
+
+        if (showDiagnosticsTimeoutDialog) {
+            TimeoutValueDialog(
+                title = stringResource(R.string.settings_player_diagnostics_timeout),
+                subtitle = stringResource(R.string.settings_timeout_diagnostics_subtitle),
+                initialValue = uiState.playerDiagnosticsTimeoutSeconds,
+                onDismiss = { showDiagnosticsTimeoutDialog = false }
+            ) { seconds ->
+                viewModel.setPlayerDiagnosticsTimeoutSeconds(seconds)
+                showDiagnosticsTimeoutDialog = false
             }
         }
 
@@ -1626,6 +1845,65 @@ private fun PremiumSelectionDialog(
 }
 
 @Composable
+private fun TimeoutValueDialog(
+    title: String,
+    subtitle: String,
+    initialValue: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    var value by rememberSaveable(initialValue) { mutableStateOf(initialValue.toString()) }
+    val parsedValue = value.toIntOrNull()
+    val isValid = parsedValue != null && parsedValue in 2..60
+
+    PremiumDialog(
+        title = title,
+        subtitle = subtitle,
+        onDismissRequest = onDismiss,
+        widthFraction = 0.42f,
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_timeout_seconds_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurface
+                )
+                NumericSettingsTextField(
+                    value = value,
+                    onValueChange = { updated -> value = updated.filter(Char::isDigit).take(2) },
+                    placeholder = stringResource(R.string.settings_timeout_seconds_placeholder)
+                )
+                Text(
+                    text = if (isValid) {
+                        formatTimeoutSecondsLabel(parsedValue ?: initialValue, androidx.compose.ui.platform.LocalContext.current)
+                    } else {
+                        stringResource(R.string.settings_timeout_validation)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isValid) OnSurfaceDim else Color(0xFFFF8A80)
+                )
+            }
+        },
+        footer = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)
+            ) {
+                PremiumDialogFooterButton(
+                    label = stringResource(R.string.settings_cancel),
+                    onClick = onDismiss
+                )
+                PremiumDialogFooterButton(
+                    label = stringResource(R.string.settings_timeout_apply),
+                    onClick = { parsedValue?.let(onConfirm) },
+                    enabled = isValid
+                )
+            }
+        }
+    )
+}
+
+@Composable
 private fun LevelOption(level: Int, text: String, currentLevel: Int, onSelect: () -> Unit) {
     Row(
         modifier = Modifier
@@ -1640,6 +1918,106 @@ private fun LevelOption(level: Int, text: String, currentLevel: Int, onSelect: (
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = OnBackground)
+    }
+}
+
+@Composable
+private fun NumericSettingsTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String
+) {
+    val isTelevisionDevice = com.streamvault.app.device.rememberIsTelevisionDevice()
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var hasContainerFocus by remember { mutableStateOf(false) }
+    var hasInputFocus by remember { mutableStateOf(false) }
+    var acceptsInput by remember(isTelevisionDevice) { mutableStateOf(!isTelevisionDevice) }
+    var pendingInputActivation by remember { mutableStateOf(false) }
+    var fieldValue by remember {
+        mutableStateOf(TextFieldValue(text = value, selection = TextRange(value.length)))
+    }
+    val isFocused = hasContainerFocus || hasInputFocus
+
+    LaunchedEffect(value) {
+        if (value != fieldValue.text) {
+            fieldValue = TextFieldValue(text = value, selection = TextRange(value.length))
+        }
+    }
+
+    LaunchedEffect(acceptsInput, pendingInputActivation) {
+        if (!isTelevisionDevice || !acceptsInput || !pendingInputActivation) return@LaunchedEffect
+        focusRequester.requestFocus()
+        keyboardController?.show()
+        pendingInputActivation = false
+    }
+
+    TvClickableSurface(
+        onClick = {
+            if (!isTelevisionDevice) {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+                return@TvClickableSurface
+            }
+            acceptsInput = true
+            pendingInputActivation = true
+        },
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.White.copy(alpha = 0.08f),
+            focusedContainerColor = Color.White.copy(alpha = 0.12f)
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { hasContainerFocus = it.isFocused }
+    ) {
+        Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            if (value.isEmpty() && !isFocused) {
+                Text(placeholder, style = MaterialTheme.typography.bodyMedium, color = OnSurfaceDim)
+            }
+            BasicTextField(
+                value = fieldValue,
+                onValueChange = { updatedValue ->
+                    val digitsOnly = updatedValue.text.filter(Char::isDigit).take(2)
+                    fieldValue = updatedValue.copy(
+                        text = digitsOnly,
+                        selection = TextRange(digitsOnly.length.coerceAtMost(digitsOnly.length))
+                    )
+                    if (digitsOnly != value) {
+                        onValueChange(digitsOnly)
+                    }
+                },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                singleLine = true,
+                cursorBrush = SolidColor(Primary),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .focusProperties {
+                        canFocus = !isTelevisionDevice || acceptsInput
+                        if (isTelevisionDevice && acceptsInput) {
+                            left = FocusRequester.Cancel
+                            right = FocusRequester.Cancel
+                        }
+                    }
+                    .onFocusChanged {
+                        hasInputFocus = it.isFocused
+                        if (!it.isFocused) {
+                            if (isTelevisionDevice) {
+                                acceptsInput = false
+                            }
+                            keyboardController?.hide()
+                        }
+                    },
+                readOnly = isTelevisionDevice && !acceptsInput
+            )
+        }
     }
 }
 
@@ -1817,7 +2195,9 @@ private fun ProviderSettingsCard(
     onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onParentalControl: () -> Unit
+    onParentalControl: () -> Unit,
+    onToggleM3uVodClassification: (Boolean) -> Unit,
+    onRefreshM3uClassification: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Use Column layout - provider info + buttons below as separate focusable items
@@ -1904,6 +2284,62 @@ private fun ProviderSettingsCard(
                 provider = provider,
                 diagnostics = model
             )
+        }
+
+        if (provider.type == ProviderType.M3U) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Surface, RoundedCornerShape(10.dp))
+                    .border(1.dp, SurfaceHighlight, RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_m3u_vod_classification_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = OnBackground
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_m3u_vod_classification_summary),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnSurfaceDim
+                        )
+                    }
+                    Switch(
+                        checked = provider.m3uVodClassificationEnabled,
+                        onCheckedChange = onToggleM3uVodClassification
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TvClickableSurface(
+                        onClick = onRefreshM3uClassification,
+                        enabled = !isSyncing,
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = Primary.copy(alpha = 0.15f),
+                            focusedContainerColor = Primary.copy(alpha = 0.3f)
+                        ),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_m3u_vod_classification_refresh),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                    }
+                }
+            }
         }
 
         if (syncWarnings.isNotEmpty()) {
@@ -2664,6 +3100,96 @@ private fun ClickableSettingsRow(label: String, value: String, onClick: () -> Un
             Text(text = label, style = MaterialTheme.typography.bodyMedium, color = OnSurface)
             Text(text = value, style = MaterialTheme.typography.bodyMedium, color = Primary)
         }
+    }
+}
+
+@Composable
+private fun SwitchSettingsRow(label: String, value: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    TvClickableSurface(
+        onClick = { onCheckedChange(!checked) },
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Primary.copy(alpha = 0.15f)
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .mouseClickable(
+                focusRequester = focusRequester,
+                onClick = { onCheckedChange(!checked) }
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(text = label, style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+                Text(text = value, style = MaterialTheme.typography.bodySmall, color = OnSurfaceDim)
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = { onCheckedChange(it) }
+            )
+        }
+    }
+}
+
+private fun formatLatestReleaseLabel(update: AppUpdateUiModel, context: android.content.Context): String {
+    val versionName = update.latestVersionName ?: return context.getString(R.string.settings_update_not_checked)
+    val versionCodeSuffix = update.latestVersionCode?.let { " ($it)" }.orEmpty()
+    return "$versionName$versionCodeSuffix"
+}
+
+private fun formatUpdateStatusLabel(update: AppUpdateUiModel, context: android.content.Context): String {
+    val downloadedReleaseMatchesLatest = update.downloadedVersionName != null &&
+        (update.latestVersionName == null || update.downloadedVersionName == update.latestVersionName)
+    return when {
+        update.errorMessage != null -> context.getString(R.string.settings_update_status_check_failed)
+        update.downloadStatus == com.streamvault.app.update.AppUpdateDownloadStatus.Downloading -> context.getString(R.string.settings_update_status_downloading)
+        update.downloadStatus == com.streamvault.app.update.AppUpdateDownloadStatus.Downloaded && downloadedReleaseMatchesLatest -> context.getString(R.string.settings_update_status_ready_to_install)
+        update.latestVersionName == null -> context.getString(R.string.settings_update_not_checked)
+        update.isUpdateAvailable -> context.getString(R.string.settings_update_status_available)
+        else -> context.getString(R.string.settings_update_status_current)
+    }
+}
+
+private fun formatUpdateCheckTimeLabel(timestamp: Long?, context: android.content.Context): String {
+    if (timestamp == null || timestamp <= 0L) {
+        return context.getString(R.string.settings_update_not_checked)
+    }
+    return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(java.util.Date(timestamp))
+}
+
+private fun shouldShowUpdateDownloadAction(update: AppUpdateUiModel): Boolean {
+    val downloadedReleaseMatchesLatest = update.downloadedVersionName != null &&
+        (update.latestVersionName == null || update.downloadedVersionName == update.latestVersionName)
+    return when (update.downloadStatus) {
+        com.streamvault.app.update.AppUpdateDownloadStatus.Downloading,
+        com.streamvault.app.update.AppUpdateDownloadStatus.Downloaded -> downloadedReleaseMatchesLatest || (update.isUpdateAvailable && !update.downloadUrl.isNullOrBlank())
+        else -> update.isUpdateAvailable && !update.downloadUrl.isNullOrBlank()
+    }
+}
+
+private fun formatUpdateDownloadLabel(update: AppUpdateUiModel, context: android.content.Context): String {
+    val downloadedReleaseMatchesLatest = update.downloadedVersionName != null &&
+        (update.latestVersionName == null || update.downloadedVersionName == update.latestVersionName)
+    return when (update.downloadStatus) {
+        com.streamvault.app.update.AppUpdateDownloadStatus.Downloading -> context.getString(R.string.settings_update_download_in_progress)
+        com.streamvault.app.update.AppUpdateDownloadStatus.Downloaded -> {
+            if (downloadedReleaseMatchesLatest) {
+                context.getString(R.string.settings_update_install_action)
+            } else {
+                context.getString(R.string.settings_update_download_action)
+            }
+        }
+        else -> context.getString(R.string.settings_update_download_action)
     }
 }
 
@@ -3533,6 +4059,24 @@ private fun formatPlaybackSpeedLabel(speed: Float): String {
     } else {
         "${("%.2f".format(Locale.US, speed)).trimEnd('0').trimEnd('.')}x"
     }
+}
+
+private fun playerTimeoutOptions(): List<Int> = listOf(2, 3, 4, 5, 6, 8, 10, 15, 20, 30)
+
+private fun formatDecoderModeLabel(mode: DecoderMode, context: android.content.Context): String {
+    return when (mode) {
+        DecoderMode.AUTO -> context.getString(R.string.settings_decoder_auto)
+        DecoderMode.HARDWARE -> context.getString(R.string.settings_decoder_hardware)
+        DecoderMode.SOFTWARE -> context.getString(R.string.settings_decoder_software)
+    }
+}
+
+private fun formatTimeoutSecondsLabel(seconds: Int, context: android.content.Context): String {
+    return context.resources.getQuantityString(
+        R.plurals.settings_timeout_seconds,
+        seconds,
+        seconds
+    )
 }
 
 private fun formatSubtitleSizeLabel(scale: Float, context: android.content.Context): String {

@@ -137,6 +137,50 @@ class M3uParserTest {
     }
 
     @Test
+    fun `parse_headerAliases_extractGuideUrl`() {
+        val variants = listOf("x-tvg-url", "tvg-url", "url-xml")
+
+        variants.forEach { attribute ->
+            val result = parser.parse(
+                """
+                #EXTM3U $attribute="https://epg.example.com/$attribute.xml.gz"
+                #EXTINF:-1 group-title="News",CNN
+                http://stream.example.com/cnn.m3u8
+                """.trimIndent().byteInputStream()
+            )
+
+            assertThat(result.header.tvgUrl).isEqualTo("https://epg.example.com/$attribute.xml.gz")
+        }
+    }
+
+    @Test
+    fun `parse_headerWithUtf8Bom_extractsGuideUrl`() {
+        val result = parser.parse(
+            (
+                "\uFEFF#EXTM3U x-tvg-url=\"https://epg.example.com/guide.xml\"\n" +
+                    "#EXTINF:-1 tvg-id=\"foxlivenow_foxlivenow_US\" group-title=\"News\",LiveNOW from FOX\n" +
+                    "https://stream.example.com/live.m3u8\n"
+                ).byteInputStream()
+        )
+
+        assertThat(result.header.tvgUrl).isEqualTo("https://epg.example.com/guide.xml")
+        assertThat(result.entries.single().tvgId).isEqualTo("foxlivenow_foxlivenow_US")
+    }
+
+    @Test
+    fun `parse_headerWithMultipleEpgUrls_usesFirstUrl`() {
+        val result = parser.parse(
+            """
+            #EXTM3U x-tvg-url="https://epg.example.com/guide.xml.gz, https://backup.example.com/guide.xml"
+            #EXTINF:-1 group-title="News",CNN
+            http://stream.example.com/cnn.m3u8
+            """.trimIndent().byteInputStream()
+        )
+
+        assertThat(result.header.tvgUrl).isEqualTo("https://epg.example.com/guide.xml.gz")
+    }
+
+    @Test
     fun `parse_catchUpAttributes_extracted`() {
         val m3u = """
             #EXTM3U

@@ -182,6 +182,11 @@ class SyncManager @Inject constructor(
         val stagedAcceptedCount: Int = 0
     )
 
+    private data class LiveCatalogSnapshot(
+        val categories: List<CategoryEntity>?,
+        val channels: List<ChannelEntity>
+    )
+
     private data class SequentialProviderAdaptation(
         val rememberSequential: Boolean,
         val healthyStreak: Int
@@ -541,6 +546,7 @@ class SyncManager @Inject constructor(
         }
         progress(provider.id, onProgress, "Connecting to server...")
         val useTextClassification = preferencesRepository.useXtreamTextClassification.first()
+        val hiddenLiveCategoryIds = preferencesRepository.getHiddenCategoryIds(provider.id, ContentType.LIVE).first()
         val api = createXtreamSyncProvider(provider, useTextClassification)
 
         var metadata = syncMetadataRepository.getMetadata(provider.id) ?: SyncMetadata(provider.id)
@@ -552,6 +558,7 @@ class SyncManager @Inject constructor(
                 provider = provider,
                 api = api,
                 existingMetadata = metadata,
+                hiddenLiveCategoryIds = hiddenLiveCategoryIds,
                 onProgress = onProgress
             )
             val liveSequentialStress = liveSyncResult.strategyFeedback.segmentedStressDetected
@@ -568,10 +575,16 @@ class SyncManager @Inject constructor(
 
             when (val liveResult = liveSyncResult.catalogResult) {
                 is CatalogStrategyResult.Success -> {
+                    val liveCatalog = mergeVisibleLiveSyncWithHiddenStoredContent(
+                        providerId = provider.id,
+                        visibleCategories = liveSyncResult.categories,
+                        visibleChannels = liveResult.items.map { it.toEntity() },
+                        hiddenLiveCategoryIds = hiddenLiveCategoryIds
+                    )
                     val acceptedCount = syncCatalogStore.replaceLiveCatalog(
                         providerId = provider.id,
-                        categories = liveSyncResult.categories,
-                        channels = liveResult.items.map { it.toEntity() }
+                        categories = liveCatalog.categories,
+                        channels = liveCatalog.channels
                     )
                     metadata = metadata.copy(
                         lastLiveSync = now,
@@ -583,10 +596,16 @@ class SyncManager @Inject constructor(
                     warnings += liveSyncResult.warnings + liveResult.warnings
                 }
                 is CatalogStrategyResult.Partial -> {
+                    val liveCatalog = mergeVisibleLiveSyncWithHiddenStoredContent(
+                        providerId = provider.id,
+                        visibleCategories = liveSyncResult.categories,
+                        visibleChannels = liveResult.items.map { it.toEntity() },
+                        hiddenLiveCategoryIds = hiddenLiveCategoryIds
+                    )
                     val acceptedCount = syncCatalogStore.replaceLiveCatalog(
                         providerId = provider.id,
-                        categories = liveSyncResult.categories,
-                        channels = liveResult.items.map { it.toEntity() }
+                        categories = liveCatalog.categories,
+                        channels = liveCatalog.channels
                     )
                     metadata = metadata.copy(
                         lastLiveSync = now,
@@ -934,6 +953,7 @@ class SyncManager @Inject constructor(
     ): List<String> {
         var updatedMetadata = metadata
         val warnings = mutableListOf<String>()
+        val hiddenLiveCategoryIds = preferencesRepository.getHiddenCategoryIds(provider.id, ContentType.LIVE).first()
 
         when (provider.type) {
             ProviderType.XTREAM_CODES -> {
@@ -996,7 +1016,7 @@ class SyncManager @Inject constructor(
             progress(provider.id, onProgress, "Refreshing external EPG sources...")
             epgSourceRepository.refreshAllForProvider(provider.id)
             progress(provider.id, onProgress, "Resolving EPG mappings...")
-            epgSourceRepository.resolveForProvider(provider.id)
+            epgSourceRepository.resolveForProvider(provider.id, hiddenLiveCategoryIds)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1012,6 +1032,7 @@ class SyncManager @Inject constructor(
         onProgress: ((String) -> Unit)?
     ) {
         progress(provider.id, onProgress, "Retrying EPG...")
+        val hiddenLiveCategoryIds = preferencesRepository.getHiddenCategoryIds(provider.id, ContentType.LIVE).first()
         val epgUrl = when (provider.type) {
             ProviderType.XTREAM_CODES -> {
                 val base = provider.serverUrl.trimEnd('/')
@@ -1044,7 +1065,7 @@ class SyncManager @Inject constructor(
         progress(provider.id, onProgress, "Refreshing external EPG sources...")
         epgSourceRepository.refreshAllForProvider(provider.id)
         progress(provider.id, onProgress, "Resolving EPG mappings...")
-        epgSourceRepository.resolveForProvider(provider.id)
+        epgSourceRepository.resolveForProvider(provider.id, hiddenLiveCategoryIds)
     }
 
     private suspend fun syncLiveOnly(
@@ -1056,12 +1077,14 @@ class SyncManager @Inject constructor(
             ProviderType.XTREAM_CODES -> {
                 progress(provider.id, onProgress, "Retrying Live TV...")
                 val useTextClassification = preferencesRepository.useXtreamTextClassification.first()
+                val hiddenLiveCategoryIds = preferencesRepository.getHiddenCategoryIds(provider.id, ContentType.LIVE).first()
                 val api = createXtreamSyncProvider(provider, useTextClassification)
                 val currentMetadata = syncMetadataRepository.getMetadata(provider.id) ?: SyncMetadata(provider.id)
                 val liveSyncResult = syncXtreamLiveCatalog(
                     provider = provider,
                     api = api,
                     existingMetadata = currentMetadata,
+                    hiddenLiveCategoryIds = hiddenLiveCategoryIds,
                     onProgress = onProgress
                 )
                 val liveSequentialStress = liveSyncResult.strategyFeedback.segmentedStressDetected
@@ -1078,10 +1101,16 @@ class SyncManager @Inject constructor(
 
                 when (val liveResult = liveSyncResult.catalogResult) {
                     is CatalogStrategyResult.Success -> {
+                        val liveCatalog = mergeVisibleLiveSyncWithHiddenStoredContent(
+                            providerId = provider.id,
+                            visibleCategories = liveSyncResult.categories,
+                            visibleChannels = liveResult.items.map { it.toEntity() },
+                            hiddenLiveCategoryIds = hiddenLiveCategoryIds
+                        )
                         val acceptedCount = syncCatalogStore.replaceLiveCatalog(
                             providerId = provider.id,
-                            categories = liveSyncResult.categories,
-                            channels = liveResult.items.map { it.toEntity() }
+                            categories = liveCatalog.categories,
+                            channels = liveCatalog.channels
                         )
                         syncMetadataRepository.updateMetadata(
                             currentMetadata.copy(
@@ -1094,10 +1123,16 @@ class SyncManager @Inject constructor(
                         )
                     }
                     is CatalogStrategyResult.Partial -> {
+                        val liveCatalog = mergeVisibleLiveSyncWithHiddenStoredContent(
+                            providerId = provider.id,
+                            visibleCategories = liveSyncResult.categories,
+                            visibleChannels = liveResult.items.map { it.toEntity() },
+                            hiddenLiveCategoryIds = hiddenLiveCategoryIds
+                        )
                         val acceptedCount = syncCatalogStore.replaceLiveCatalog(
                             providerId = provider.id,
-                            categories = liveSyncResult.categories,
-                            channels = liveResult.items.map { it.toEntity() }
+                            categories = liveCatalog.categories,
+                            channels = liveCatalog.channels
                         )
                         syncMetadataRepository.updateMetadata(
                             currentMetadata.copy(
@@ -1812,6 +1847,7 @@ class SyncManager @Inject constructor(
         provider: Provider,
         api: XtreamProvider,
         existingMetadata: SyncMetadata,
+        hiddenLiveCategoryIds: Set<Long>,
         onProgress: ((String) -> Unit)?
     ): CatalogSyncPayload<Channel> {
         Log.i(TAG, "Xtream live strategy start for provider ${provider.id}.")
@@ -1839,43 +1875,53 @@ class SyncManager @Inject constructor(
             ?.let { categories -> api.mapCategories(ContentType.LIVE, categories) }
             ?.map { category -> category.toEntity(provider.id) }
             ?.takeIf { it.isNotEmpty() }
+        val filteredRawLiveCategories = rawLiveCategories.orEmpty().filterNot { category ->
+            category.categoryId.toLongOrNull() in hiddenLiveCategoryIds
+        }
+        val visibleResolvedCategories = resolvedCategories
+            ?.filterNot { category -> category.categoryId in hiddenLiveCategoryIds }
+            ?.takeIf { it.isNotEmpty() }
         var fullResult: CatalogStrategyResult<Channel> = CatalogStrategyResult.EmptyValid("full")
         var categoryResult: CatalogStrategyResult<Channel> = CatalogStrategyResult.EmptyValid("category_bulk")
-        progress(provider.id, onProgress, "Downloading Live TV...")
-        fullResult = loadXtreamLiveFull(provider, api)
-        when (fullResult) {
-            is CatalogStrategyResult.Success -> return CatalogSyncPayload(
-                catalogResult = fullResult,
-                categories = mergePreferredAndFallbackCategories(
-                    resolvedCategories,
-                    buildFallbackLiveCategories(provider.id, fullResult.items)
-                ),
-                warnings = emptyList(),
-                strategyFeedback = XtreamStrategyFeedback(
-                    attemptedFullCatalog = true,
-                    fullCatalogUnsafe = false
+        if (hiddenLiveCategoryIds.isEmpty()) {
+            progress(provider.id, onProgress, "Downloading Live TV...")
+            fullResult = loadXtreamLiveFull(provider, api)
+            when (fullResult) {
+                is CatalogStrategyResult.Success -> return CatalogSyncPayload(
+                    catalogResult = fullResult,
+                    categories = mergePreferredAndFallbackCategories(
+                        visibleResolvedCategories,
+                        buildFallbackLiveCategories(provider.id, fullResult.items)
+                    ),
+                    warnings = emptyList(),
+                    strategyFeedback = XtreamStrategyFeedback(
+                        attemptedFullCatalog = true,
+                        fullCatalogUnsafe = false
+                    )
                 )
-            )
-            is CatalogStrategyResult.Partial -> return CatalogSyncPayload(
-                catalogResult = fullResult,
-                categories = mergePreferredAndFallbackCategories(
-                    resolvedCategories,
-                    buildFallbackLiveCategories(provider.id, fullResult.items)
-                ),
-                warnings = emptyList(),
-                strategyFeedback = XtreamStrategyFeedback(
-                    attemptedFullCatalog = true,
-                    fullCatalogUnsafe = false
+                is CatalogStrategyResult.Partial -> return CatalogSyncPayload(
+                    catalogResult = fullResult,
+                    categories = mergePreferredAndFallbackCategories(
+                        visibleResolvedCategories,
+                        buildFallbackLiveCategories(provider.id, fullResult.items)
+                    ),
+                    warnings = emptyList(),
+                    strategyFeedback = XtreamStrategyFeedback(
+                        attemptedFullCatalog = true,
+                        fullCatalogUnsafe = false
+                    )
                 )
-            )
-            else -> Unit
+                else -> Unit
+            }
+        } else {
+            Log.i(TAG, "Xtream live full catalog skipped for provider ${provider.id} because ${hiddenLiveCategoryIds.size} live categories are hidden.")
         }
 
         progress(provider.id, onProgress, "Downloading Live TV by category...")
         categoryResult = loadXtreamLiveByCategory(
             provider,
             api,
-            rawLiveCategories.orEmpty(),
+            filteredRawLiveCategories,
             onProgress,
             preferSequential = existingMetadata.liveSequentialFailuresRemembered
         )
@@ -1883,11 +1929,11 @@ class SyncManager @Inject constructor(
             catalogResult = categoryResult,
             categories = when (categoryResult) {
                 is CatalogStrategyResult.Success -> mergePreferredAndFallbackCategories(
-                    resolvedCategories,
+                    visibleResolvedCategories,
                     buildFallbackLiveCategories(provider.id, categoryResult.items)
                 )
                 is CatalogStrategyResult.Partial -> mergePreferredAndFallbackCategories(
-                    resolvedCategories,
+                    visibleResolvedCategories,
                     buildFallbackLiveCategories(provider.id, categoryResult.items)
                 )
                 else -> null
@@ -2988,7 +3034,7 @@ class SyncManager @Inject constructor(
                         val safeLogoUrl = UrlSecurityPolicy.sanitizeImportedAssetUrl(entry.tvgLogo)
                         val safeCatchUpSource = UrlSecurityPolicy.sanitizeImportedAssetUrl(entry.catchUpSource)
 
-                        if (isVodEntry(entry)) {
+                        if (provider.m3uVodClassificationEnabled && isVodEntry(entry)) {
                             if (!includeMovies) {
                                 return@parseStreaming
                             }
@@ -3668,6 +3714,35 @@ class SyncManager @Inject constructor(
 
     /** Delegates to M3uParser to avoid duplicate logic. */
     internal fun isVodEntry(entry: M3uParser.M3uEntry): Boolean = M3uParser.isVodEntry(entry)
+
+    private suspend fun mergeVisibleLiveSyncWithHiddenStoredContent(
+        providerId: Long,
+        visibleCategories: List<CategoryEntity>?,
+        visibleChannels: List<ChannelEntity>,
+        hiddenLiveCategoryIds: Set<Long>
+    ): LiveCatalogSnapshot {
+        if (hiddenLiveCategoryIds.isEmpty()) {
+            return LiveCatalogSnapshot(visibleCategories, visibleChannels)
+        }
+
+        val hiddenCategories = categoryDao.getByProviderAndTypeSync(providerId, ContentType.LIVE.name)
+            .filter { category -> category.categoryId in hiddenLiveCategoryIds }
+        val hiddenChannels = channelDao.getByProviderSync(providerId)
+            .filter { channel -> channel.categoryId != null && channel.categoryId in hiddenLiveCategoryIds }
+
+        val mergedCategories = ((visibleCategories ?: emptyList()) + hiddenCategories)
+            .distinctBy { it.categoryId to it.type }
+            .sortedBy { it.categoryId }
+            .takeIf { it.isNotEmpty() }
+        val mergedChannels = (visibleChannels + hiddenChannels)
+            .distinctBy { it.streamId }
+            .sortedBy { it.number }
+
+        return LiveCatalogSnapshot(
+            categories = mergedCategories,
+            channels = mergedChannels
+        )
+    }
 
     private fun progress(providerId: Long, callback: ((String) -> Unit)?, message: String) {
         publishSyncState(providerId, SyncState.Syncing(message))

@@ -75,6 +75,19 @@ class XmltvParser {
         DateTimeFormatter.ofPattern("yyyyMMdd", Locale.US)
     )
 
+    private fun newPullParser(inputStream: InputStream): XmlPullParser {
+        val factory = XmlPullParserFactory.newInstance()
+        factory.isNamespaceAware = false
+        val parser = factory.newPullParser()
+        runCatching {
+            parser.setFeature("http://xmlpull.org/v1/doc/features.html#relaxed", true)
+        }.onFailure {
+            logger.log(Level.FINE, "XML pull parser does not support relaxed mode", it)
+        }
+        parser.setInput(inputStream, "UTF-8")
+        return parser
+    }
+
     @Deprecated(
         message = "Loads all programs into memory. Use parseStreaming() for large EPG files.",
         replaceWith = ReplaceWith("parseStreaming(inputStream, onProgram)")
@@ -83,10 +96,7 @@ class XmltvParser {
         val programs = mutableListOf<Program>()
 
         try {
-            val factory = XmlPullParserFactory.newInstance()
-            factory.isNamespaceAware = false
-            val parser = factory.newPullParser()
-            parser.setInput(inputStream, "UTF-8")
+            val parser = newPullParser(inputStream)
 
             var eventType = parser.eventType
             var currentChannelId: String? = null
@@ -197,10 +207,7 @@ class XmltvParser {
         inputStream: InputStream,
         onProgram: suspend (Program) -> Unit
     ) {
-        val factory = XmlPullParserFactory.newInstance()
-        factory.isNamespaceAware = false
-        val parser = factory.newPullParser()
-        parser.setInput(inputStream, "UTF-8")
+        val parser = newPullParser(inputStream)
 
         var eventType = parser.eventType
         var currentChannelId: String? = null
@@ -318,10 +325,7 @@ class XmltvParser {
         onChannel: suspend (XmltvChannel) -> Unit,
         onProgramme: suspend (XmltvProgramme) -> Unit
     ) {
-        val factory = XmlPullParserFactory.newInstance()
-        factory.isNamespaceAware = false
-        val parser = factory.newPullParser()
-        parser.setInput(inputStream, "UTF-8")
+        val parser = newPullParser(inputStream)
 
         var eventType = parser.eventType
         // Channel state

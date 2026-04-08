@@ -61,7 +61,7 @@ class M3uParser {
         reader.use {
             while (true) {
                 val rawLine = reader.readLine() ?: break
-                val line = rawLine.trim()
+                val line = sanitizeLine(rawLine)
                 if (line.isEmpty()) {
                     continue
                 }
@@ -107,7 +107,7 @@ class M3uParser {
         reader.use {
             while (true) {
                 val rawLine = reader.readLine() ?: break
-                val line = rawLine.trim()
+                val line = sanitizeLine(rawLine)
                 if (line.isEmpty()) {
                     continue
                 }
@@ -184,6 +184,9 @@ class M3uParser {
         )
     }
 
+    private fun sanitizeLine(rawLine: String): String =
+        rawLine.removePrefix("\uFEFF").trim()
+
     private data class ParsedExtinf(
         val name: String,
         val durationSeconds: Int?,
@@ -207,9 +210,21 @@ class M3uParser {
     private fun parseHeader(line: String): M3uHeader {
         val attributes = parseAttributes(line, line.indexOf(' '))
         return M3uHeader(
-            tvgUrl = attributes["x-tvg-url"] ?: attributes["url-tvg"],
+            tvgUrl = extractHeaderEpgUrl(attributes),
             userAgent = attributes["user-agent"]
         )
+    }
+
+    private fun extractHeaderEpgUrl(attributes: Map<String, String>): String? {
+        val rawValue = headerEpgAttributes
+            .firstNotNullOfOrNull { key -> attributes[key]?.takeIf { it.isNotBlank() } }
+            ?: return null
+
+        return rawValue
+            .split(',')
+            .asSequence()
+            .map { it.trim() }
+            .firstOrNull { it.isNotEmpty() }
     }
 
     private fun parseExtinf(line: String): ParsedExtinf? {
@@ -379,6 +394,13 @@ class M3uParser {
     }
 
     companion object {
+        private val headerEpgAttributes = listOf(
+            "x-tvg-url",
+            "url-tvg",
+            "tvg-url",
+            "url-xml"
+        )
+
         /** Exposed for callers outside M3uParser (e.g. SyncManager) to avoid duplicate logic. */
         fun isVodEntry(entry: M3uEntry): Boolean {
             val url = entry.url.lowercase()

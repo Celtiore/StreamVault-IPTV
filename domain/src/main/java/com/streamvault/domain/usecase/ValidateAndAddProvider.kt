@@ -21,6 +21,7 @@ data class M3uProviderSetupCommand(
     val url: String,
     val name: String,
     val epgSyncMode: ProviderEpgSyncMode = ProviderEpgSyncMode.UPFRONT,
+    val m3uVodClassificationEnabled: Boolean = true,
     val existingProviderId: Long? = null
 )
 
@@ -75,6 +76,7 @@ class ValidateAndAddProvider @Inject constructor(
                 url = validated.data.url,
                 name = validated.data.name,
                 epgSyncMode = command.epgSyncMode,
+                m3uVodClassificationEnabled = command.m3uVodClassificationEnabled,
                 onProgress = onProgress,
                 id = command.existingProviderId
             ).toUseCaseResult()

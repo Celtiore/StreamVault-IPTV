@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -37,6 +38,7 @@ data class ParentalControlGroupUiState(
     val hasPendingProtectionChanges: Boolean = false,
     val pendingProtectionChangeCount: Int = 0,
     val hiddenCategoryCount: Int = 0,
+    val visibleCategoryCount: Int = 0,
     val userMessage: String? = null
 )
 
@@ -136,6 +138,43 @@ class ParentalControlGroupViewModel @Inject constructor(
         }
     }
 
+    fun hideAllCategories() {
+        viewModelScope.launch {
+            val categoriesByType = categoryRepository.getCategories(providerId)
+                .first()
+                .groupBy(Category::type)
+            ContentType.entries
+                .filter { it != ContentType.SERIES_EPISODE }
+                .forEach { type ->
+                    val categoryIds = categoriesByType[type]
+                        .orEmpty()
+                        .map(Category::id)
+                        .toSet()
+                    preferencesRepository.setHiddenCategoryIds(
+                        providerId = providerId,
+                        type = type,
+                        categoryIds = categoryIds
+                    )
+                }
+            _userMessage.value = "All categories hidden."
+        }
+    }
+
+    fun unhideAllCategories() {
+        viewModelScope.launch {
+            ContentType.entries
+                .filter { it != ContentType.SERIES_EPISODE }
+                .forEach { type ->
+                    preferencesRepository.setHiddenCategoryIds(
+                        providerId = providerId,
+                        type = type,
+                        categoryIds = emptySet()
+                    )
+                }
+            _userMessage.value = "All categories restored."
+        }
+    }
+
     suspend fun verifyPin(pin: String): Boolean = preferencesRepository.verifyParentalPin(pin)
 
     fun setParentalPin(pin: String) {
@@ -225,6 +264,9 @@ private fun buildUiState(
         pendingProtectionChangeCount = inputs.pendingProtection.size,
         hiddenCategoryCount = inputs.categories.count { category ->
             category.id in inputs.hiddenByType[category.type].orEmpty()
+        },
+        visibleCategoryCount = inputs.categories.count { category ->
+            category.id !in inputs.hiddenByType[category.type].orEmpty()
         },
         userMessage = inputs.userMessage
     )

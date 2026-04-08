@@ -15,7 +15,7 @@ interface ProviderRepository {
     suspend fun deleteProvider(id: Long): Result<Unit>
     suspend fun setActiveProvider(id: Long): Result<Unit>
     suspend fun loginXtream(serverUrl: String, username: String, password: String, name: String, xtreamFastSyncEnabled: Boolean, epgSyncMode: ProviderEpgSyncMode = ProviderEpgSyncMode.UPFRONT, onProgress: ((String) -> Unit)? = null, id: Long? = null): Result<Provider>
-    suspend fun validateM3u(url: String, name: String, epgSyncMode: ProviderEpgSyncMode = ProviderEpgSyncMode.UPFRONT, onProgress: ((String) -> Unit)? = null, id: Long? = null): Result<Provider>
+    suspend fun validateM3u(url: String, name: String, epgSyncMode: ProviderEpgSyncMode = ProviderEpgSyncMode.UPFRONT, m3uVodClassificationEnabled: Boolean = true, onProgress: ((String) -> Unit)? = null, id: Long? = null): Result<Provider>
     suspend fun refreshProviderData(
         providerId: Long,
         force: Boolean = false,
