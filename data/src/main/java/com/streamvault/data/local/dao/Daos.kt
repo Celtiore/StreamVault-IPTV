@@ -217,6 +217,30 @@ abstract class ChannelDao {
     )
     abstract fun getByIds(ids: List<Long>): Flow<List<ChannelBrowseEntity>>
 
+    @Query(
+        """
+        SELECT id, stream_id, name, logo_url, group_title, category_id, category_name, stream_url,
+               epg_channel_id, number, catch_up_supported, catch_up_days, catchUpSource,
+               provider_id, is_adult, is_user_protected, logical_group_id, error_count
+        FROM channels
+        WHERE logical_group_id IN (:logicalGroupIds)
+        ORDER BY provider_id ASC, number ASC, name ASC
+        """
+    )
+    abstract fun getByLogicalGroupIds(logicalGroupIds: List<String>): Flow<List<ChannelBrowseEntity>>
+
+    @Query(
+        """
+        SELECT id, stream_id, name, logo_url, group_title, category_id, category_name, stream_url,
+               epg_channel_id, number, catch_up_supported, catch_up_days, catchUpSource,
+               provider_id, is_adult, is_user_protected, logical_group_id, error_count
+        FROM channels
+        WHERE provider_id = :providerId AND logical_group_id = :logicalGroupId
+        ORDER BY number ASC, name ASC
+        """
+    )
+    abstract suspend fun getByLogicalGroupId(providerId: Long, logicalGroupId: String): List<ChannelBrowseEntity>
+
     @Query("SELECT category_id, COUNT(*) as item_count FROM channels WHERE provider_id = :providerId AND category_id IS NOT NULL GROUP BY category_id")
     abstract fun getCategoryCounts(providerId: Long): Flow<List<CategoryCount>>
 

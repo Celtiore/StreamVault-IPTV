@@ -4,6 +4,7 @@ import com.streamvault.app.ui.model.guideLookupKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamvault.app.ui.model.applyProviderCategoryDisplayPreferences
+import com.streamvault.app.ui.model.orderedByRequestedRawIds
 import com.streamvault.domain.manager.ParentalControlManager
 import com.streamvault.domain.manager.ProgramReminderManager
 import com.streamvault.domain.model.ActiveLiveSource
@@ -1191,8 +1192,7 @@ class EpgViewModel @Inject constructor(
                 val filtered = providerId?.let { requiredProviderId ->
                     unsorted.filter { it.providerId == requiredProviderId }
                 } ?: unsorted
-                val channelsById = filtered.associateBy { it.id }
-                ids.mapNotNull { channelsById[it] }
+                filtered.orderedByRequestedRawIds(ids)
             }
         }
 

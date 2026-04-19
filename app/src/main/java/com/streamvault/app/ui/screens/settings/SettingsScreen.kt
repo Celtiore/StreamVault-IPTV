@@ -77,6 +77,9 @@ import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.ActiveLiveSource
 import com.streamvault.domain.model.CombinedM3uProfile
+import com.streamvault.domain.model.GroupedChannelLabelMode
+import com.streamvault.domain.model.LiveChannelGroupingMode
+import com.streamvault.domain.model.LiveVariantPreferenceMode
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.ProviderStatus
@@ -206,6 +209,9 @@ fun SettingsScreen(
     var showLiveTvModeDialog by rememberSaveable { mutableStateOf(false) }
     var showLiveTvQuickFilterVisibilityDialog by rememberSaveable { mutableStateOf(false) }
     var showLiveChannelNumberingDialog by rememberSaveable { mutableStateOf(false) }
+    var showLiveChannelGroupingDialog by rememberSaveable { mutableStateOf(false) }
+    var showGroupedChannelLabelDialog by rememberSaveable { mutableStateOf(false) }
+    var showLiveVariantPreferenceDialog by rememberSaveable { mutableStateOf(false) }
     var showVodViewModeDialog by rememberSaveable { mutableStateOf(false) }
     var showGuideDefaultCategoryDialog by rememberSaveable { mutableStateOf(false) }
     var showPlaybackSpeedDialog by rememberSaveable { mutableStateOf(false) }
@@ -710,6 +716,25 @@ fun SettingsScreen(
                                 onClick = { showLiveChannelNumberingDialog = true }
                             )
                             ClickableSettingsRow(
+                                label = stringResource(R.string.settings_live_channel_grouping_mode),
+                                value = stringResource(uiState.liveChannelGroupingMode.labelResId()),
+                                onClick = { showLiveChannelGroupingDialog = true }
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_grouped_channel_label_mode),
+                                value = stringResource(uiState.groupedChannelLabelMode.labelResId()),
+                                onClick = { showGroupedChannelLabelDialog = true },
+                                enabled = uiState.liveChannelGroupingMode == LiveChannelGroupingMode.GROUPED,
+                                indent = 24.dp
+                            )
+                            ClickableSettingsRow(
+                                label = stringResource(R.string.settings_live_variant_preference_mode),
+                                value = stringResource(uiState.liveVariantPreferenceMode.labelResId()),
+                                onClick = { showLiveVariantPreferenceDialog = true },
+                                enabled = uiState.liveChannelGroupingMode == LiveChannelGroupingMode.GROUPED,
+                                indent = 24.dp
+                            )
+                            ClickableSettingsRow(
                                 label = stringResource(R.string.settings_guide_default_category),
                                 value = guideDefaultCategoryLabel,
                                 onClick = { showGuideDefaultCategoryDialog = true }
@@ -1128,6 +1153,12 @@ fun SettingsScreen(
         onShowLiveTvQuickFilterVisibilityDialogChange = { showLiveTvQuickFilterVisibilityDialog = it },
         showLiveChannelNumberingDialog = showLiveChannelNumberingDialog,
         onShowLiveChannelNumberingDialogChange = { showLiveChannelNumberingDialog = it },
+        showLiveChannelGroupingDialog = showLiveChannelGroupingDialog,
+        onShowLiveChannelGroupingDialogChange = { showLiveChannelGroupingDialog = it },
+        showGroupedChannelLabelDialog = showGroupedChannelLabelDialog,
+        onShowGroupedChannelLabelDialogChange = { showGroupedChannelLabelDialog = it },
+        showLiveVariantPreferenceDialog = showLiveVariantPreferenceDialog,
+        onShowLiveVariantPreferenceDialogChange = { showLiveVariantPreferenceDialog = it },
         showVodViewModeDialog = showVodViewModeDialog,
         onShowVodViewModeDialogChange = { showVodViewModeDialog = it },
         showGuideDefaultCategoryDialog = showGuideDefaultCategoryDialog,

@@ -183,6 +183,30 @@
     <string name="settings_show_all_channels_category_subtitle">Display the virtual All Channels group in Live TV and the EPG guide.</string>
     <string name="settings_show_recent_channels_category">Show Recent Channels category</string>
     <string name="settings_show_recent_channels_category_subtitle">Display recently watched channels in Live TV browsing and on the Home screen.</string>
+    <string name="settings_live_channel_grouping_mode">Channel grouping</string>
+    <string name="settings_live_channel_grouping_mode_subtitle">Choose whether live browse surfaces collapse channel variants into one logical channel or show every raw stream row.</string>
+    <string name="settings_live_channel_grouping_grouped">Grouped</string>
+    <string name="settings_live_channel_grouping_grouped_desc">Show one logical live channel with selectable variants.</string>
+    <string name="settings_live_channel_grouping_raw_variants">Raw Variants</string>
+    <string name="settings_live_channel_grouping_raw_variants_desc">Show every imported live stream as its own channel entry.</string>
+    <string name="settings_grouped_channel_label_mode">Grouped label style</string>
+    <string name="settings_grouped_channel_label_mode_subtitle">Control how grouped live channels are named in browse surfaces and overlays.</string>
+    <string name="settings_grouped_channel_label_canonical">Canonical</string>
+    <string name="settings_grouped_channel_label_canonical_desc">Use a cleaned channel name without provider variant tags.</string>
+    <string name="settings_grouped_channel_label_original">Original Provider Label</string>
+    <string name="settings_grouped_channel_label_original_desc">Use the selected provider variant name as the channel label.</string>
+    <string name="settings_grouped_channel_label_hybrid">Hybrid</string>
+    <string name="settings_grouped_channel_label_hybrid_desc">Use clean labels in browse views while preserving original variant names where detail matters.</string>
+    <string name="settings_live_variant_preference_mode">Live variant preference</string>
+    <string name="settings_live_variant_preference_mode_subtitle">Choose how the app auto-picks the default variant when a grouped channel has multiple options.</string>
+    <string name="settings_live_variant_preference_best_quality">By Tag</string>
+    <string name="settings_live_variant_preference_best_quality_desc">Prefer declared quality tags first, and only fall back to observed playback quality when no tag was identified.</string>
+    <string name="settings_live_variant_preference_observed_only">Observed Only</string>
+    <string name="settings_live_variant_preference_observed_only_desc">Rank variants only by real playback observations such as delivered resolution, bitrate, and frame rate.</string>
+    <string name="settings_live_variant_preference_balanced">Balanced</string>
+    <string name="settings_live_variant_preference_balanced_desc">Balance conservative quality estimates with recent reliability signals.</string>
+    <string name="settings_live_variant_preference_stability_first">Stability First</string>
+    <string name="settings_live_variant_preference_stability_first_desc">Favor the most reliable working stream even if quality is lower.</string>
 
     
     <string name="movies_incorrect_pin">Incorrect PIN</string>
@@ -914,6 +938,7 @@
     <string name="player_epg_short">EPG</string>
     <string name="player_multiview_short">Multiview</string>
     <string name="player_quality_short">Quality</string>
+    <string name="player_variants_short">Variants</string>
     <string name="player_episodes">Episodes</string>
     <string name="player_resume_title">Resume Playback</string>
     <string name="player_resume_desc">Do you want to resume %1$s from where you left off?</string>
@@ -925,6 +950,8 @@
     <string name="player_track_subs">Select Subtitles</string>
     <string name="player_track_off">Off</string>
     <string name="player_video_quality">Video Quality</string>
+    <string name="player_channel_variants">Channel Variants</string>
+    <string name="player_action_variants">Variants</string>
     <string name="player_aspect_ratio_label">Aspect %1$s</string>
     <string name="player_resolution_auto_label">AUTO:%1$s</string>
     <string name="player_channel_not_found">Channel not found</string>

@@ -15,11 +15,15 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.streamvault.data.local.dao.ChannelPreferenceDao
 import com.streamvault.data.local.dao.SearchHistoryDao
 import com.streamvault.data.local.entity.ChannelPreferenceEntity
+import com.streamvault.domain.model.GroupedChannelLabelMode
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.ActiveLiveSource
+import com.streamvault.domain.model.LiveChannelGroupingMode
+import com.streamvault.domain.model.LiveChannelObservedQuality
+import com.streamvault.domain.model.LiveVariantPreferenceMode
 import com.streamvault.domain.model.SearchHistoryScope
 import com.streamvault.domain.manager.ParentalPinVerifier
 import com.streamvault.domain.manager.ParentalControlSessionState
@@ -74,6 +78,11 @@ class PreferencesRepository @Inject constructor(
         val LIVE_TV_CATEGORY_FILTERS = stringPreferencesKey("live_tv_category_filters")
         val LIVE_TV_QUICK_FILTER_VISIBILITY = stringPreferencesKey("live_tv_quick_filter_visibility")
         val LIVE_CHANNEL_NUMBERING_MODE = stringPreferencesKey("live_channel_numbering_mode")
+        val LIVE_CHANNEL_GROUPING_MODE = stringPreferencesKey("live_channel_grouping_mode")
+        val GROUPED_CHANNEL_LABEL_MODE = stringPreferencesKey("grouped_channel_label_mode")
+        val LIVE_VARIANT_PREFERENCE_MODE = stringPreferencesKey("live_variant_preference_mode")
+        val LIVE_VARIANT_SELECTIONS = stringPreferencesKey("live_variant_selections")
+        val LIVE_VARIANT_OBSERVATIONS = stringPreferencesKey("live_variant_observations")
         val VOD_VIEW_MODE = stringPreferencesKey("vod_view_mode")
         val GUIDE_DENSITY = stringPreferencesKey("guide_density")
         val GUIDE_CHANNEL_MODE = stringPreferencesKey("guide_channel_mode")
@@ -1068,6 +1077,75 @@ class PreferencesRepository @Inject constructor(
         }
     }
 
+    val liveChannelGroupingMode: Flow<LiveChannelGroupingMode> = context.dataStore.data.map { preferences ->
+        LiveChannelGroupingMode.fromStorage(preferences[PreferencesKeys.LIVE_CHANNEL_GROUPING_MODE])
+    }
+
+    suspend fun setLiveChannelGroupingMode(mode: LiveChannelGroupingMode) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LIVE_CHANNEL_GROUPING_MODE] = mode.storageValue
+        }
+    }
+
+    val groupedChannelLabelMode: Flow<GroupedChannelLabelMode> = context.dataStore.data.map { preferences ->
+        GroupedChannelLabelMode.fromStorage(preferences[PreferencesKeys.GROUPED_CHANNEL_LABEL_MODE])
+    }
+
+    suspend fun setGroupedChannelLabelMode(mode: GroupedChannelLabelMode) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.GROUPED_CHANNEL_LABEL_MODE] = mode.storageValue
+        }
+    }
+
+    val liveVariantPreferenceMode: Flow<LiveVariantPreferenceMode> = context.dataStore.data.map { preferences ->
+        LiveVariantPreferenceMode.fromStorage(preferences[PreferencesKeys.LIVE_VARIANT_PREFERENCE_MODE])
+    }
+
+    suspend fun setLiveVariantPreferenceMode(mode: LiveVariantPreferenceMode) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LIVE_VARIANT_PREFERENCE_MODE] = mode.storageValue
+        }
+    }
+
+    val liveVariantSelections: Flow<Map<String, Long>> = context.dataStore.data.map { preferences ->
+        decodeLiveVariantSelections(preferences[PreferencesKeys.LIVE_VARIANT_SELECTIONS])
+    }
+
+    suspend fun setPreferredLiveVariant(providerId: Long, logicalGroupId: String, rawChannelId: Long) {
+        if (providerId <= 0L || logicalGroupId.isBlank() || rawChannelId <= 0L) return
+        context.dataStore.edit { preferences ->
+            val updated = decodeLiveVariantSelections(preferences[PreferencesKeys.LIVE_VARIANT_SELECTIONS]).toMutableMap()
+            updated[liveVariantSelectionKey(providerId, logicalGroupId)] = rawChannelId
+            preferences[PreferencesKeys.LIVE_VARIANT_SELECTIONS] = encodeLiveVariantSelections(updated)
+        }
+    }
+
+    suspend fun clearPreferredLiveVariant(providerId: Long, logicalGroupId: String) {
+        if (providerId <= 0L || logicalGroupId.isBlank()) return
+        context.dataStore.edit { preferences ->
+            val updated = decodeLiveVariantSelections(preferences[PreferencesKeys.LIVE_VARIANT_SELECTIONS]).toMutableMap()
+            updated.remove(liveVariantSelectionKey(providerId, logicalGroupId))
+            if (updated.isEmpty()) {
+                preferences.remove(PreferencesKeys.LIVE_VARIANT_SELECTIONS)
+            } else {
+                preferences[PreferencesKeys.LIVE_VARIANT_SELECTIONS] = encodeLiveVariantSelections(updated)
+            }
+        }
+    }
+
+    val liveVariantObservations: Flow<Map<Long, LiveChannelObservedQuality>> = context.dataStore.data.map { preferences ->
+        decodeLiveVariantObservations(preferences[PreferencesKeys.LIVE_VARIANT_OBSERVATIONS])
+    }
+
+    suspend fun recordLiveVariantObservation(rawChannelId: Long, observedQuality: LiveChannelObservedQuality) {
+        if (rawChannelId <= 0L) return
+        context.dataStore.edit { preferences ->
+            val updated = decodeLiveVariantObservations(preferences[PreferencesKeys.LIVE_VARIANT_OBSERVATIONS]).toMutableMap()
+            updated[rawChannelId] = observedQuality
+            preferences[PreferencesKeys.LIVE_VARIANT_OBSERVATIONS] = encodeLiveVariantObservations(updated)
+        }
+    }
+
     val vodViewMode: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.VOD_VIEW_MODE]
     }
@@ -1355,6 +1433,62 @@ class PreferencesRepository @Inject constructor(
 
     private fun pinnedCategoriesKey(providerId: Long, type: ContentType): String =
         "pinned_categories_${providerId}_${type.name}"
+
+    private fun liveVariantSelectionKey(providerId: Long, logicalGroupId: String): String =
+        "${providerId}|${logicalGroupId.trim()}"
+
+    private fun encodeLiveVariantSelections(values: Map<String, Long>): String =
+        values.entries
+            .sortedBy { it.key }
+            .joinToString("\n") { (key, rawChannelId) -> "$key=$rawChannelId" }
+
+    private fun decodeLiveVariantSelections(encoded: String?): Map<String, Long> =
+        encoded
+            .orEmpty()
+            .lineSequence()
+            .mapNotNull { line ->
+                val separator = line.indexOf('=')
+                if (separator <= 0) return@mapNotNull null
+                val key = line.substring(0, separator).trim()
+                val rawChannelId = line.substring(separator + 1).trim().toLongOrNull() ?: return@mapNotNull null
+                key.takeIf { it.isNotBlank() }?.let { it to rawChannelId }
+            }
+            .toMap()
+
+    private fun encodeLiveVariantObservations(values: Map<Long, LiveChannelObservedQuality>): String =
+        values.entries
+            .sortedByDescending { it.value.lastSuccessfulAt }
+            .take(500)
+            .joinToString("\n") { (rawChannelId, observation) ->
+                listOf(
+                    rawChannelId,
+                    observation.lastObservedWidth,
+                    observation.lastObservedHeight,
+                    observation.lastObservedBitrate,
+                    observation.lastObservedFrameRate,
+                    observation.successCount,
+                    observation.lastSuccessfulAt
+                ).joinToString("|")
+            }
+
+    private fun decodeLiveVariantObservations(encoded: String?): Map<Long, LiveChannelObservedQuality> =
+        encoded
+            .orEmpty()
+            .lineSequence()
+            .mapNotNull { line ->
+                val parts = line.split('|')
+                if (parts.size != 7) return@mapNotNull null
+                val rawChannelId = parts[0].toLongOrNull() ?: return@mapNotNull null
+                rawChannelId to LiveChannelObservedQuality(
+                    lastObservedWidth = parts[1].toIntOrNull() ?: 0,
+                    lastObservedHeight = parts[2].toIntOrNull() ?: 0,
+                    lastObservedBitrate = parts[3].toIntOrNull() ?: 0,
+                    lastObservedFrameRate = parts[4].toFloatOrNull() ?: 0f,
+                    successCount = parts[5].toIntOrNull() ?: 0,
+                    lastSuccessfulAt = parts[6].toLongOrNull() ?: 0L
+                )
+            }
+            .toMap()
 
     private suspend fun clearLegacyRecentSearchQueries() {
         context.dataStore.edit { preferences ->

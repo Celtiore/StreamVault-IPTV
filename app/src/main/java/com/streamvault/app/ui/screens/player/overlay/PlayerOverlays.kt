@@ -196,11 +196,13 @@ fun ChannelInfoOverlay(
     subtitleTrackCount: Int = 0,
     audioTrackCount: Int = 0,
     videoQualityCount: Int = 0,
+    channelVariantCount: Int = 0,
     isMuted: Boolean = false,
     onToggleMute: () -> Unit = {},
     onOpenSubtitleTracks: () -> Unit = {},
     onOpenAudioTracks: () -> Unit = {},
     onOpenVideoTracks: () -> Unit = {},
+    onOpenVariants: () -> Unit = {},
     onEnterPictureInPicture: () -> Unit = {},
     isCastConnected: Boolean = false,
     onCast: () -> Unit = {},
@@ -331,6 +333,17 @@ fun ChannelInfoOverlay(
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
                             }
+                            currentChannel?.currentVariant
+                                ?.takeIf { channelVariantCount > 1 }
+                                ?.attributes
+                                ?.toOverlayBadgeLabel()
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { variantLabel ->
+                                    StatusPill(
+                                        label = variantLabel,
+                                        containerColor = AppColors.SurfaceEmphasis
+                                    )
+                                }
                             if (currentChannel?.catchUpSupported == true) {
                                 StatusPill(
                                     label = stringResource(R.string.player_catchup_badge),
@@ -507,6 +520,16 @@ fun ChannelInfoOverlay(
                             icon = stringResource(R.string.player_action_quality),
                             label = stringResource(R.string.player_quality_short),
                             onClick = onOpenVideoTracks,
+                            onInteraction = { handleMainActionFocus(null) }
+                        )
+                    }
+                }
+                if (channelVariantCount > 1) {
+                    item {
+                        QuickActionButton(
+                            icon = stringResource(R.string.player_action_variants),
+                            label = stringResource(R.string.player_variants_short),
+                            onClick = onOpenVariants,
                             onInteraction = { handleMainActionFocus(null) }
                         )
                     }
@@ -730,6 +753,19 @@ private enum class ChannelInfoPanel {
     LIVE_DVR,
     RECORD,
     CATCH_UP
+}
+
+private fun com.streamvault.domain.model.LiveChannelVariantAttributes.toOverlayBadgeLabel(): String {
+    val parts = buildList {
+        resolutionLabel?.let(::add)
+        codecLabel?.takeIf { it == "HEVC" || it == "AV1" }?.let(::add)
+        frameRate?.takeIf { it >= 50 }?.let { add("${it}fps") }
+        if (isHdr) {
+            add("HDR")
+        }
+        sourceHint?.takeIf { it == "Backup" || it == "Alternate" || it == "Lite" || it == "Mobile" }?.let(::add)
+    }
+    return parts.joinToString(" ")
 }
 
 private data class ChannelInfoMenuEntry(

@@ -57,6 +57,9 @@ import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
+import com.streamvault.domain.model.GroupedChannelLabelMode
+import com.streamvault.domain.model.LiveChannelGroupingMode
+import com.streamvault.domain.model.LiveVariantPreferenceMode
 import com.streamvault.domain.model.RecordingFailureCategory
 import com.streamvault.domain.model.RecordingItem
 import com.streamvault.domain.model.RecordingSourceType
@@ -731,6 +734,159 @@ internal fun LiveChannelNumberingModeDialog(
 }
 
 @Composable
+internal fun LiveChannelGroupingModeDialog(
+    selectedMode: LiveChannelGroupingMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (LiveChannelGroupingMode) -> Unit
+) {
+    PremiumDialog(
+        title = stringResource(R.string.settings_live_channel_grouping_mode),
+        subtitle = stringResource(R.string.settings_live_channel_grouping_mode_subtitle),
+        onDismissRequest = onDismiss,
+        widthFraction = 0.52f,
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LiveChannelGroupingMode.entries.forEach { mode ->
+                    TvClickableSurface(
+                        onClick = { onModeSelected(mode) },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (mode == selectedMode) Primary.copy(alpha = 0.18f) else SurfaceElevated,
+                            focusedContainerColor = Primary.copy(alpha = 0.28f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(mode.labelResId()),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (mode == selectedMode) Primary else OnBackground
+                            )
+                            Text(
+                                text = stringResource(mode.descriptionResId()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurfaceDim
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        footer = {
+            PremiumDialogFooterButton(
+                label = stringResource(R.string.settings_cancel),
+                onClick = onDismiss
+            )
+        }
+    )
+}
+
+@Composable
+internal fun GroupedChannelLabelModeDialog(
+    selectedMode: GroupedChannelLabelMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (GroupedChannelLabelMode) -> Unit
+) {
+    PremiumDialog(
+        title = stringResource(R.string.settings_grouped_channel_label_mode),
+        subtitle = stringResource(R.string.settings_grouped_channel_label_mode_subtitle),
+        onDismissRequest = onDismiss,
+        widthFraction = 0.52f,
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                GroupedChannelLabelMode.entries.forEach { mode ->
+                    TvClickableSurface(
+                        onClick = { onModeSelected(mode) },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (mode == selectedMode) Primary.copy(alpha = 0.18f) else SurfaceElevated,
+                            focusedContainerColor = Primary.copy(alpha = 0.28f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(mode.labelResId()),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (mode == selectedMode) Primary else OnBackground
+                            )
+                            Text(
+                                text = stringResource(mode.descriptionResId()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurfaceDim
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        footer = {
+            PremiumDialogFooterButton(
+                label = stringResource(R.string.settings_cancel),
+                onClick = onDismiss
+            )
+        }
+    )
+}
+
+@Composable
+internal fun LiveVariantPreferenceModeDialog(
+    selectedMode: LiveVariantPreferenceMode,
+    onDismiss: () -> Unit,
+    onModeSelected: (LiveVariantPreferenceMode) -> Unit
+) {
+    PremiumDialog(
+        title = stringResource(R.string.settings_live_variant_preference_mode),
+        subtitle = stringResource(R.string.settings_live_variant_preference_mode_subtitle),
+        onDismissRequest = onDismiss,
+        widthFraction = 0.52f,
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LiveVariantPreferenceMode.entries.forEach { mode ->
+                    TvClickableSurface(
+                        onClick = { onModeSelected(mode) },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(14.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (mode == selectedMode) Primary.copy(alpha = 0.18f) else SurfaceElevated,
+                            focusedContainerColor = Primary.copy(alpha = 0.28f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = stringResource(mode.labelResId()),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (mode == selectedMode) Primary else OnBackground
+                            )
+                            Text(
+                                text = stringResource(mode.descriptionResId()),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OnSurfaceDim
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        footer = {
+            PremiumDialogFooterButton(
+                label = stringResource(R.string.settings_cancel),
+                onClick = onDismiss
+            )
+        }
+    )
+}
+
+@Composable
 internal fun SettingsRow(label: String, value: String) {
     val focusRequester = remember { FocusRequester() }
     TvClickableSurface(
@@ -763,14 +919,20 @@ internal fun SettingsRow(label: String, value: String) {
 }
 
 @Composable
-internal fun ClickableSettingsRow(label: String, value: String, onClick: () -> Unit) {
+internal fun ClickableSettingsRow(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    indent: androidx.compose.ui.unit.Dp = 0.dp
+) {
     val focusRequester = remember { FocusRequester() }
     TvClickableSurface(
-        onClick = onClick,
+        onClick = { if (enabled) onClick() },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
-            focusedContainerColor = Primary.copy(alpha = 0.15f)
+            focusedContainerColor = if (enabled) Primary.copy(alpha = 0.15f) else Color.Transparent
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
         modifier = Modifier
@@ -778,18 +940,26 @@ internal fun ClickableSettingsRow(label: String, value: String, onClick: () -> U
             .focusRequester(focusRequester)
             .mouseClickable(
                 focusRequester = focusRequester,
-                onClick = onClick
+                onClick = { if (enabled) onClick() }
             )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .padding(start = 8.dp + indent, end = 8.dp, top = 12.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = label, style = MaterialTheme.typography.bodyMedium, color = OnSurface)
-            Text(text = value, style = MaterialTheme.typography.bodyMedium, color = Primary)
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) OnSurface else OnSurfaceDim
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (enabled) Primary else OnSurfaceDim
+            )
         }
     }
 }
@@ -1399,5 +1569,41 @@ internal fun ChannelNumberingMode.descriptionResId(): Int = when (this) {
     ChannelNumberingMode.GROUP -> R.string.settings_live_channel_numbering_group_desc
     ChannelNumberingMode.PROVIDER -> R.string.settings_live_channel_numbering_provider_desc
     ChannelNumberingMode.HIDDEN -> R.string.settings_live_channel_numbering_hidden_desc
+}
+
+internal fun LiveChannelGroupingMode.labelResId(): Int = when (this) {
+    LiveChannelGroupingMode.GROUPED -> R.string.settings_live_channel_grouping_grouped
+    LiveChannelGroupingMode.RAW_VARIANTS -> R.string.settings_live_channel_grouping_raw_variants
+}
+
+internal fun LiveChannelGroupingMode.descriptionResId(): Int = when (this) {
+    LiveChannelGroupingMode.GROUPED -> R.string.settings_live_channel_grouping_grouped_desc
+    LiveChannelGroupingMode.RAW_VARIANTS -> R.string.settings_live_channel_grouping_raw_variants_desc
+}
+
+internal fun GroupedChannelLabelMode.labelResId(): Int = when (this) {
+    GroupedChannelLabelMode.CANONICAL -> R.string.settings_grouped_channel_label_canonical
+    GroupedChannelLabelMode.ORIGINAL_PROVIDER_LABEL -> R.string.settings_grouped_channel_label_original
+    GroupedChannelLabelMode.HYBRID -> R.string.settings_grouped_channel_label_hybrid
+}
+
+internal fun GroupedChannelLabelMode.descriptionResId(): Int = when (this) {
+    GroupedChannelLabelMode.CANONICAL -> R.string.settings_grouped_channel_label_canonical_desc
+    GroupedChannelLabelMode.ORIGINAL_PROVIDER_LABEL -> R.string.settings_grouped_channel_label_original_desc
+    GroupedChannelLabelMode.HYBRID -> R.string.settings_grouped_channel_label_hybrid_desc
+}
+
+internal fun LiveVariantPreferenceMode.labelResId(): Int = when (this) {
+    LiveVariantPreferenceMode.BEST_QUALITY -> R.string.settings_live_variant_preference_best_quality
+    LiveVariantPreferenceMode.OBSERVED_ONLY -> R.string.settings_live_variant_preference_observed_only
+    LiveVariantPreferenceMode.BALANCED -> R.string.settings_live_variant_preference_balanced
+    LiveVariantPreferenceMode.STABILITY_FIRST -> R.string.settings_live_variant_preference_stability_first
+}
+
+internal fun LiveVariantPreferenceMode.descriptionResId(): Int = when (this) {
+    LiveVariantPreferenceMode.BEST_QUALITY -> R.string.settings_live_variant_preference_best_quality_desc
+    LiveVariantPreferenceMode.OBSERVED_ONLY -> R.string.settings_live_variant_preference_observed_only_desc
+    LiveVariantPreferenceMode.BALANCED -> R.string.settings_live_variant_preference_balanced_desc
+    LiveVariantPreferenceMode.STABILITY_FIRST -> R.string.settings_live_variant_preference_stability_first_desc
 }
 

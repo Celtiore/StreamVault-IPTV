@@ -13,6 +13,9 @@ import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.ChannelNumberingMode
 import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
+import com.streamvault.domain.model.GroupedChannelLabelMode
+import com.streamvault.domain.model.LiveChannelGroupingMode
+import com.streamvault.domain.model.LiveVariantPreferenceMode
 import com.streamvault.domain.model.Provider
 import com.streamvault.domain.model.ProviderType
 import com.streamvault.domain.model.VirtualCategoryIds
@@ -77,6 +80,9 @@ internal fun observeSettingsPreferenceSnapshot(
             liveTvCategoryFilters = emptyList(),
             liveTvQuickFilterVisibilityMode = LiveTvQuickFilterVisibilityMode.ALWAYS_VISIBLE,
             liveChannelNumberingMode = ChannelNumberingMode.GROUP,
+            liveChannelGroupingMode = LiveChannelGroupingMode.RAW_VARIANTS,
+            groupedChannelLabelMode = GroupedChannelLabelMode.HYBRID,
+            liveVariantPreferenceMode = LiveVariantPreferenceMode.BALANCED,
             vodViewMode = VodViewMode.MODERN,
             guideDefaultCategoryId = VirtualCategoryIds.FAVORITES,
             guideDefaultCategoryOptions = emptyList(),
@@ -156,6 +162,12 @@ internal fun observeSettingsPreferenceSnapshot(
         )
     }.combine(preferencesRepository.liveChannelNumberingMode) { snapshot, liveChannelNumberingMode ->
         snapshot.copy(liveChannelNumberingMode = liveChannelNumberingMode)
+    }.combine(preferencesRepository.liveChannelGroupingMode) { snapshot, liveChannelGroupingMode ->
+        snapshot.copy(liveChannelGroupingMode = liveChannelGroupingMode)
+    }.combine(preferencesRepository.groupedChannelLabelMode) { snapshot, groupedChannelLabelMode ->
+        snapshot.copy(groupedChannelLabelMode = groupedChannelLabelMode)
+    }.combine(preferencesRepository.liveVariantPreferenceMode) { snapshot, liveVariantPreferenceMode ->
+        snapshot.copy(liveVariantPreferenceMode = liveVariantPreferenceMode)
     }.combine(preferencesRepository.vodViewMode) { snapshot, vodViewMode ->
         snapshot.copy(vodViewMode = VodViewMode.fromStorage(vodViewMode))
     }.combine(preferencesRepository.guideDefaultCategoryId) { snapshot, guideDefaultCategoryId ->
@@ -227,6 +239,9 @@ internal fun SettingsUiState.applyPreferenceSnapshot(snapshot: SettingsPreferenc
         liveTvCategoryFilters = snapshot.liveTvCategoryFilters,
         liveTvQuickFilterVisibilityMode = snapshot.liveTvQuickFilterVisibilityMode,
         liveChannelNumberingMode = snapshot.liveChannelNumberingMode,
+        liveChannelGroupingMode = snapshot.liveChannelGroupingMode,
+        groupedChannelLabelMode = snapshot.groupedChannelLabelMode,
+        liveVariantPreferenceMode = snapshot.liveVariantPreferenceMode,
         vodViewMode = snapshot.vodViewMode,
         guideDefaultCategoryId = snapshot.guideDefaultCategoryId,
         guideDefaultCategoryOptions = guideDefaultCategoryOptions,

@@ -24,6 +24,8 @@ All notable product changes are recorded in this document.
 - Added automatic update download option.
 - Added options to show/hide “All Channels” and “Recent Channels”.
 - Added "Hidden" option to Live TV Channel Numbering — hides channel numbers everywhere in the app (channel lists, player overlay, EPG, zap banner).
+- Added live channel grouping settings with grouped/raw modes, grouped label style, and variant preference options.
+- Added live channel variant selection in the player overlay, separate from adaptive stream quality selection.
 #### Recording
 - Schedule recordings directly from the EPG guide — Record, Record Daily, and Record Weekly buttons on any future program.
 - Configurable pre/post recording padding (start early / end late) — applied automatically to all scheduled recordings.
@@ -65,6 +67,10 @@ All notable product changes are recorded in this document.
 ### Improved
 - Faster loading and lower memory usage for large channel lists.
 - More stable playback when switching channels.
+- Live channel grouping now keeps raw provider rows intact and builds logical channels with explicit variants at read time.
+- Live variant quality parsing now recognizes more tags, including `2K`, `576p`, `540p`, `fullhd`, `ultra hd`, and `uhd`.
+- Live variant preference modes now support tag-first ranking and an observed-only mode based on actual playback telemetry.
+- Channel grouping sub-options in Settings are visually nested under the main grouping control for clarity.
 - Numeric channel entry now accepts up to 6 digits before resetting, which supports larger provider lineups.
 - Better handling of live stream buffering and recovery.
 - Improved recording settings layout with cleaner action grouping and a dedicated recordings browser dialog.
@@ -101,6 +107,7 @@ All notable product changes are recorded in this document.
 - Fixed stream detection for Xtream channels.
 - Fixed DRM handling causing repeated retries.
 - Fixed expired stream URLs during playback.
+- Fixed heavy live-channel grouping work running too close to UI input paths by moving repository presentation transforms off the main thread.
 - Fixed Xtream live recordings failing when provider direct-source URLs expired mid-recording.
 - Fixed behind-live-window recovery issues.
 - Fixed playback restarting due to EPG updates.

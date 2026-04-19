@@ -69,7 +69,9 @@ import com.streamvault.app.ui.theme.SurfaceElevated
 import com.streamvault.app.ui.theme.SurfaceHighlight
 import com.streamvault.app.ui.theme.PrimaryLight
 import com.streamvault.app.ui.theme.TextSecondary
+import com.streamvault.domain.model.Channel
 import com.streamvault.domain.model.Episode
+import com.streamvault.domain.model.LiveChannelVariant
 import com.streamvault.domain.model.Season
 import com.streamvault.player.PlayerError
 import com.streamvault.player.PlayerTrack
@@ -318,6 +320,95 @@ fun PlayerTrackSelectionDialog(
                                 onDismiss()
                             },
                             modifier = if (trackType != TrackType.TEXT && track == tracks.firstOrNull()) {
+                                Modifier.focusRequester(firstItemFocusRequester)
+                            } else {
+                                Modifier
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChannelVariantSelectionDialog(
+    visible: Boolean,
+    channel: Channel?,
+    onDismiss: () -> Unit,
+    onSelectVariant: (Long) -> Unit
+) {
+    val variants = channel?.variants.orEmpty()
+    if (!visible || channel == null || variants.size <= 1) return
+
+    val firstItemFocusRequester = remember(channel.logicalGroupId, channel.selectedVariantId) { FocusRequester() }
+
+    LaunchedEffect(visible, channel.logicalGroupId, channel.selectedVariantId) {
+        firstItemFocusRequester.requestFocusSafely(
+            tag = "ChannelVariantSelectionDialog",
+            target = "Selected channel variant"
+        )
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.8f))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 360.dp, max = 520.dp)
+                    .background(SurfaceElevated, RoundedCornerShape(12.dp))
+                    .padding(24.dp)
+                    .onPreviewKeyEvent { event ->
+                        if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
+                        when (event.nativeKeyEvent.keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP,
+                            KeyEvent.KEYCODE_DPAD_DOWN,
+                            KeyEvent.KEYCODE_DPAD_LEFT,
+                            KeyEvent.KEYCODE_DPAD_RIGHT,
+                            KeyEvent.KEYCODE_DPAD_CENTER,
+                            KeyEvent.KEYCODE_ENTER,
+                            KeyEvent.KEYCODE_NUMPAD_ENTER,
+                            KeyEvent.KEYCODE_BACK -> false
+                            else -> true
+                        }
+                    }
+            ) {
+                Text(
+                    text = stringResource(R.string.player_channel_variants),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = channel.canonicalName.ifBlank { channel.name },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = OnSurfaceDim,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
+                )
+
+                val initiallyFocusedVariantId = channel.variants
+                    .firstOrNull { it.rawChannelId == channel.selectedVariantId }
+                    ?.rawChannelId
+                    ?: channel.variants.firstOrNull()?.rawChannelId
+
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemsIndexed(variants, key = { _, variant -> variant.rawChannelId }) { index, variant ->
+                        TrackSelectionItem(
+                            name = buildVariantSelectionLabel(variant),
+                            isSelected = variant.rawChannelId == channel.selectedVariantId,
+                            onClick = {
+                                onSelectVariant(variant.rawChannelId)
+                                onDismiss()
+                            },
+                            modifier = if (variant.rawChannelId == initiallyFocusedVariantId) {
                                 Modifier.focusRequester(firstItemFocusRequester)
                             } else {
                                 Modifier
@@ -809,6 +900,30 @@ private fun formatPlaybackSpeedLabel(speed: Float): String {
         "${speed.toInt()}x"
     } else {
         "${("%.2f".format(Locale.US, speed)).trimEnd('0').trimEnd('.')}x"
+    }
+}
+
+private fun buildVariantSelectionLabel(variant: LiveChannelVariant): String {
+    val metaParts = buildList {
+        variant.attributes.resolutionLabel?.let(::add)
+        variant.attributes.codecLabel?.let(::add)
+        variant.attributes.frameRate?.takeIf { it > 0 }?.let { add("${it}fps") }
+        if (variant.attributes.isHdr) {
+            add("HDR")
+        }
+        variant.attributes.transportLabel?.let(::add)
+        variant.attributes.sourceHint?.let(::add)
+        variant.attributes.regionHint?.let(::add)
+        variant.attributes.languageHint?.let(::add)
+        addAll(variant.attributes.rawTags.take(2))
+    }.distinct()
+
+    return buildString {
+        append(variant.originalName)
+        if (metaParts.isNotEmpty()) {
+            append(" • ")
+            append(metaParts.joinToString(" • "))
+        }
     }
 }
 

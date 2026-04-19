@@ -53,6 +53,12 @@ internal fun SettingsScreenDialogs(
     onShowLiveTvQuickFilterVisibilityDialogChange: (Boolean) -> Unit,
     showLiveChannelNumberingDialog: Boolean,
     onShowLiveChannelNumberingDialogChange: (Boolean) -> Unit,
+    showLiveChannelGroupingDialog: Boolean,
+    onShowLiveChannelGroupingDialogChange: (Boolean) -> Unit,
+    showGroupedChannelLabelDialog: Boolean,
+    onShowGroupedChannelLabelDialogChange: (Boolean) -> Unit,
+    showLiveVariantPreferenceDialog: Boolean,
+    onShowLiveVariantPreferenceDialogChange: (Boolean) -> Unit,
     showVodViewModeDialog: Boolean,
     onShowVodViewModeDialogChange: (Boolean) -> Unit,
     showGuideDefaultCategoryDialog: Boolean,
@@ -160,6 +166,39 @@ internal fun SettingsScreenDialogs(
             onModeSelected = { mode ->
                 viewModel.setLiveChannelNumberingMode(mode)
                 onShowLiveChannelNumberingDialogChange(false)
+            }
+        )
+    }
+
+    if (showLiveChannelGroupingDialog) {
+        LiveChannelGroupingModeDialog(
+            selectedMode = uiState.liveChannelGroupingMode,
+            onDismiss = { onShowLiveChannelGroupingDialogChange(false) },
+            onModeSelected = { mode ->
+                viewModel.setLiveChannelGroupingMode(mode)
+                onShowLiveChannelGroupingDialogChange(false)
+            }
+        )
+    }
+
+    if (showGroupedChannelLabelDialog) {
+        GroupedChannelLabelModeDialog(
+            selectedMode = uiState.groupedChannelLabelMode,
+            onDismiss = { onShowGroupedChannelLabelDialogChange(false) },
+            onModeSelected = { mode ->
+                viewModel.setGroupedChannelLabelMode(mode)
+                onShowGroupedChannelLabelDialogChange(false)
+            }
+        )
+    }
+
+    if (showLiveVariantPreferenceDialog) {
+        LiveVariantPreferenceModeDialog(
+            selectedMode = uiState.liveVariantPreferenceMode,
+            onDismiss = { onShowLiveVariantPreferenceDialogChange(false) },
+            onModeSelected = { mode ->
+                viewModel.setLiveVariantPreferenceMode(mode)
+                onShowLiveVariantPreferenceDialogChange(false)
             }
         )
     }

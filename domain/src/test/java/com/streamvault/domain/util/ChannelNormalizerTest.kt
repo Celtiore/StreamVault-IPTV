@@ -74,4 +74,46 @@ class ChannelNormalizerTest {
         val id = ChannelNormalizer.getLogicalGroupId("FR: Canal+", 1L)
         assertThat(id).isEqualTo("1_canal")
     }
+
+    @Test
+    fun `classify extracts canonical name and variant metadata`() {
+        val classification = ChannelNormalizer.classify("FR: Canal+ FHD HEVC 50FPS RAW", 9L)
+
+        assertThat(classification.logicalGroupId).isEqualTo("9_canal")
+        assertThat(classification.canonicalName).isEqualTo("Canal +")
+        assertThat(classification.attributes.resolutionLabel).isEqualTo("1080p")
+        assertThat(classification.attributes.declaredHeight).isEqualTo(1080)
+        assertThat(classification.attributes.codecLabel).isEqualTo("HEVC")
+        assertThat(classification.attributes.frameRate).isEqualTo(50)
+        assertThat(classification.attributes.sourceHint).isEqualTo("Raw")
+        assertThat(classification.attributes.regionHint).isEqualTo("FR")
+        assertThat(classification.attributes.rawTags).containsAtLeast("1080p", "50fps", "HEVC", "Raw", "FR")
+    }
+
+    @Test
+    fun `classify preserves region and language hints from bracketed tags`() {
+        val classification = ChannelNormalizer.classify("|UK| BBC One (English) HD", 7L)
+
+        assertThat(classification.logicalGroupId).isEqualTo("7_bbcone")
+        assertThat(classification.canonicalName).isEqualTo("BBC One")
+        assertThat(classification.attributes.regionHint).isEqualTo("UK")
+        assertThat(classification.attributes.languageHint).isEqualTo("EN")
+        assertThat(classification.attributes.resolutionLabel).isEqualTo("720p")
+        assertThat(classification.attributes.rawTags).containsAtLeast("UK", "EN", "720p")
+    }
+
+    @Test
+    fun `classify recognizes fullhd ultrahd 2k and numeric mid-tier tags`() {
+        val fullHd = ChannelNormalizer.classify("Sports One fullhd", 1L)
+        val ultraHd = ChannelNormalizer.classify("Cinema Ultra HD", 1L)
+        val twoK = ChannelNormalizer.classify("Arena 2k", 1L)
+        val fiveSeventySix = ChannelNormalizer.classify("News 576p", 1L)
+        val fiveForty = ChannelNormalizer.classify("Docs 540p", 1L)
+
+        assertThat(fullHd.attributes.declaredHeight).isEqualTo(1080)
+        assertThat(ultraHd.attributes.declaredHeight).isEqualTo(2160)
+        assertThat(twoK.attributes.declaredHeight).isEqualTo(1440)
+        assertThat(fiveSeventySix.attributes.declaredHeight).isEqualTo(576)
+        assertThat(fiveForty.attributes.declaredHeight).isEqualTo(540)
+    }
 }

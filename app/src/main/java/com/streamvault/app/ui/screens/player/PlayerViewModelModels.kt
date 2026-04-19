@@ -126,12 +126,22 @@ internal fun List<Season>?.sanitizedForPlayer(): List<Season> = this.orEmpty().m
 
 internal fun Channel.sanitizedForPlayer(): Channel {
     val sanitizedQualityOptions = qualityOptions.orEmpty()
+    val sanitizedVariants = variants.orEmpty()
+        .filter { it.streamUrl.isNotBlank() }
+        .distinctBy { it.rawChannelId }
     val sanitizedAlternativeStreams = alternativeStreams.orEmpty()
         .filter { it.isNotBlank() }
         .distinct()
+        .ifEmpty {
+            sanitizedVariants
+                .map { it.streamUrl }
+                .filter { it != streamUrl }
+                .distinct()
+        }
     return copy(
         qualityOptions = sanitizedQualityOptions,
-        alternativeStreams = sanitizedAlternativeStreams
+        alternativeStreams = sanitizedAlternativeStreams,
+        variants = sanitizedVariants
     )
 }
 

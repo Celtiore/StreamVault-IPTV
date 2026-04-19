@@ -6,6 +6,7 @@ import com.streamvault.app.di.AuxiliaryPlayerEngine
 import com.streamvault.app.tvinput.TvInputChannelSyncManager
 import com.streamvault.app.ui.screens.multiview.MultiViewManager
 import com.streamvault.app.ui.model.applyProviderCategoryDisplayPreferences
+import com.streamvault.app.ui.model.orderedByRequestedRawIds
 import com.streamvault.app.ui.model.guideLookupKey
 import com.streamvault.app.ui.model.LiveTvChannelMode
 import com.streamvault.app.ui.model.LiveTvQuickFilterVisibilityMode
@@ -1578,8 +1579,7 @@ class HomeViewModel @Inject constructor(
         if (ids.isEmpty()) return flowOf(emptyList())
 
         return channelRepository.getChannelsByIds(ids).map { unsorted ->
-            val channelsById = unsorted.associateBy { it.id }
-            ids.mapNotNull { channelsById[it] }
+            unsorted.orderedByRequestedRawIds(ids)
         }
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamvault.app.R
+import com.streamvault.app.ui.model.associateByAnyRawId
 import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.Favorite
 import com.streamvault.domain.model.PlaybackHistory
@@ -277,7 +278,7 @@ class FavoritesViewModel @Inject constructor(
                     }
 
                     recentLiveFlow.map { liveChannels ->
-                            val liveById = liveChannels.associateBy { it.id }
+                            val liveById = liveChannels.associateByAnyRawId()
                             SavedHistorySnapshot(
                                 continueWatching = continueWatching.map { entry ->
                                     SavedHistoryUiModel(
@@ -639,7 +640,7 @@ class FavoritesViewModel @Inject constructor(
                 if (seriesIds.isEmpty()) flowOf(emptyList()) else seriesRepository.getSeriesByIds(seriesIds)
             ) { history, channels, movies, series ->
                 val historyMap = history.associateBy { Triple(it.contentType, it.contentId, it.providerId) }
-                val channelsById = channels.associateBy { it.id }
+                val channelsById = channels.associateByAnyRawId()
                 val moviesById = movies.associateBy { it.id }
                 val seriesById = series.associateBy { it.id }
 

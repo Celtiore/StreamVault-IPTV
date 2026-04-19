@@ -8,6 +8,7 @@ import com.streamvault.app.cast.CastManager
 import com.streamvault.app.cast.CastMediaRequest
 import com.streamvault.app.cast.CastStartResult
 import com.streamvault.app.di.MainPlayerEngine
+import com.streamvault.app.ui.model.orderedByRequestedRawIds
 import com.streamvault.app.util.isPlaybackComplete
 import com.streamvault.app.tv.LauncherRecommendationsManager
 import com.streamvault.app.tv.WatchNextManager
@@ -23,6 +24,7 @@ import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.Episode
 import com.streamvault.domain.model.Favorite
+import com.streamvault.domain.model.LiveChannelObservedQuality
 import com.streamvault.domain.model.PlaybackHistory
 import com.streamvault.domain.model.RecordingItem
 import com.streamvault.domain.model.RecordingRecurrence
@@ -211,6 +213,7 @@ class PlayerViewModel @Inject constructor(
     private val notifiedRecordingFailureIds = mutableSetOf<String>()
     internal var lastRecordedLivePlaybackKey: Pair<Long, Long>? = null
     private var currentStreamClassLabel: String = "Primary"
+    private var lastRecordedVariantObservationSignature: String? = null
     private var prepareRequestVersion: Long = 0L
     internal var currentArtworkUrl: String? = null
     private var currentResolvedPlaybackUrl: String = ""
@@ -728,6 +731,103 @@ class PlayerViewModel @Inject constructor(
         playerEngine.selectVideoTrack(trackId)
     }
 
+    fun selectLiveVariant(rawChannelId: Long) {
+        val currentChannel = currentChannelFlow.value?.sanitizedForPlayer() ?: return
+        val updatedChannel = currentChannel.withSelectedVariant(rawChannelId)?.sanitizedForPlayer() ?: return
+        if (updatedChannel.selectedVariantId == currentChannel.selectedVariantId) return
+
+        val requestVersion = beginPlaybackSession()
+        triedAlternativeStreams.clear()
+        currentContentId = updatedChannel.id
+        currentStreamUrl = updatedChannel.streamUrl
+        currentTitle = updatedChannel.currentVariant?.originalName ?: updatedChannel.name
+        playbackTitleFlow.value = currentTitle
+        currentChannelFlow.value = updatedChannel
+        if (currentChannelIndex in channelList.indices) {
+            channelList = channelList.mapIndexed { index, existing ->
+                if (index == currentChannelIndex || existing.logicalGroupId == updatedChannel.logicalGroupId) {
+                    updatedChannel
+                } else {
+                    existing
+                }
+            }
+            currentChannelFlowList.value = channelList
+        }
+        if (currentChannelIndex >= 0) {
+            displayChannelNumberFlow.value = resolveChannelNumber(updatedChannel, currentChannelIndex)
+        }
+        refreshCurrentChannelRecording()
+        updateChannelDiagnostics(updatedChannel)
+        updateStreamClass("Variant")
+        viewModelScope.launch {
+            preferencesRepository.setPreferredLiveVariant(
+                providerId = updatedChannel.providerId,
+                logicalGroupId = updatedChannel.logicalGroupId,
+                rawChannelId = rawChannelId
+            )
+            val resolvedUrl = resolvePlaybackUrl(
+                logicalUrl = updatedChannel.streamUrl,
+                internalContentId = updatedChannel.id,
+                providerId = updatedChannel.providerId,
+                contentType = ContentType.LIVE
+            ) ?: return@launch
+            if (!isActivePlaybackSession(requestVersion, updatedChannel.streamUrl)) return@launch
+            if (currentContentType == ContentType.LIVE) {
+                recordLivePlayback(updatedChannel)
+                requestEpg(
+                    providerId = updatedChannel.providerId,
+                    epgChannelId = updatedChannel.epgChannelId,
+                    streamId = updatedChannel.streamId,
+                    internalChannelId = updatedChannel.id
+                )
+            }
+            val streamInfo = StreamInfo(
+                url = resolvedUrl,
+                title = currentTitle,
+                streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+            )
+            if (!preparePlayer(streamInfo, requestVersion)) return@launch
+            playerEngine.play()
+        }
+    }
+
+    fun recordLiveVariantObservation(playbackState: PlaybackState, videoFormat: VideoFormat) {
+        if (currentContentType != ContentType.LIVE || playbackState != PlaybackState.READY || videoFormat.isEmpty) {
+            return
+        }
+        val channel = currentChannelFlow.value?.sanitizedForPlayer() ?: return
+        val rawChannelId = channel.selectedVariantId.takeIf { it > 0 } ?: channel.id
+        if (rawChannelId <= 0L) return
+        val signature = buildString {
+            append(rawChannelId)
+            append('|')
+            append(videoFormat.width)
+            append('|')
+            append(videoFormat.height)
+            append('|')
+            append(videoFormat.bitrate)
+            append('|')
+            append(videoFormat.frameRate)
+        }
+        if (signature == lastRecordedVariantObservationSignature) return
+        lastRecordedVariantObservationSignature = signature
+
+        viewModelScope.launch {
+            val existing = preferencesRepository.liveVariantObservations.first()[rawChannelId]
+            preferencesRepository.recordLiveVariantObservation(
+                rawChannelId = rawChannelId,
+                observedQuality = LiveChannelObservedQuality(
+                    lastObservedWidth = videoFormat.width,
+                    lastObservedHeight = videoFormat.height,
+                    lastObservedBitrate = videoFormat.bitrate,
+                    lastObservedFrameRate = videoFormat.frameRate,
+                    successCount = (existing?.successCount ?: 0) + 1,
+                    lastSuccessfulAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
     fun setPlaybackSpeed(speed: Float) {
         val normalizedSpeed = speed.coerceIn(0.5f, 2f)
         playerEngine.setPlaybackSpeed(normalizedSpeed)
@@ -816,6 +916,7 @@ class PlayerViewModel @Inject constructor(
         recoveryJob?.cancel()
         thumbnailPreloadJob?.cancel()
         hasRetriedXtreamAuthRefresh = false
+        lastRecordedVariantObservationSignature = null
         return ++prepareRequestVersion
     }
 
@@ -1566,8 +1667,7 @@ class PlayerViewModel @Inject constructor(
                         .flatMapLatest { ids ->
                             if (ids.isEmpty()) flowOf(emptyList())
                             else channelRepository.getChannelsByIds(ids).map { unsorted ->
-                                val map = unsorted.associateBy { it.id }
-                                ids.mapNotNull { map[it] }
+                                unsorted.orderedByRequestedRawIds(ids)
                             }
                         }
                 } else if (categoryId == VirtualCategoryIds.FAVORITES) {
@@ -1577,8 +1677,7 @@ class PlayerViewModel @Inject constructor(
                         .flatMapLatest { ids ->
                             if (ids.isEmpty()) flowOf(emptyList())
                             else channelRepository.getChannelsByIds(ids).map { unsorted ->
-                                val byId = unsorted.associateBy { it.id }
-                                ids.mapNotNull { byId[it] }
+                                unsorted.orderedByRequestedRawIds(ids)
                             }
                         }
                 } else {
@@ -1588,8 +1687,7 @@ class PlayerViewModel @Inject constructor(
                         .flatMapLatest { ids ->
                             if (ids.isEmpty()) flowOf(emptyList())
                             else channelRepository.getChannelsByIds(ids).map { unsorted ->
-                                val byId = unsorted.associateBy { it.id }
-                                ids.mapNotNull { byId[it] }
+                                unsorted.orderedByRequestedRawIds(ids)
                             }
                         }
                 }
@@ -1709,8 +1807,7 @@ class PlayerViewModel @Inject constructor(
                 val filtered = providerId?.let { requiredProviderId ->
                     unsorted.filter { it.providerId == requiredProviderId }
                 } ?: unsorted
-                val channelsById = filtered.associateBy { it.id }
-                ids.mapNotNull { channelsById[it] }
+                filtered.orderedByRequestedRawIds(ids)
             }
         }
 
@@ -2074,7 +2171,7 @@ class PlayerViewModel @Inject constructor(
         }
         if (currentContentType != ContentType.LIVE) return false
         val channel = currentChannelFlow.value?.sanitizedForPlayer() ?: return false
-        return channel.alternativeStreams.any { altUrl ->
+        return nextLiveVariant(channel) != null || channel.alternativeStreams.any { altUrl ->
             altUrl != currentStreamUrl &&
                 altUrl !in triedAlternativeStreams &&
                 (failedStreamsThisSession[altUrl] ?: 0) == 0
@@ -2091,6 +2188,58 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun tryAlternateStreamInternal(channel: com.streamvault.domain.model.Channel): Boolean {
+        nextLiveVariant(channel)?.let { nextVariant ->
+            val updatedChannel = channel.withSelectedVariant(nextVariant.rawChannelId)?.sanitizedForPlayer() ?: return@let
+            val requestVersion = beginPlaybackSession()
+            triedAlternativeStreams.add(nextVariant.streamUrl)
+            currentContentId = updatedChannel.id
+            currentStreamUrl = updatedChannel.streamUrl
+            currentTitle = nextVariant.originalName.ifBlank { updatedChannel.name }
+            playbackTitleFlow.value = currentTitle
+            currentChannelFlow.value = updatedChannel
+            if (currentChannelIndex in channelList.indices) {
+                channelList = channelList.mapIndexed { index, existing ->
+                    if (index == currentChannelIndex || existing.logicalGroupId == updatedChannel.logicalGroupId) {
+                        updatedChannel
+                    } else {
+                        existing
+                    }
+                }
+                currentChannelFlowList.value = channelList
+            }
+            if (currentChannelIndex >= 0) {
+                displayChannelNumberFlow.value = resolveChannelNumber(updatedChannel, currentChannelIndex)
+            }
+            refreshCurrentChannelRecording()
+            updateChannelDiagnostics(updatedChannel)
+            updateStreamClass("Variant")
+            viewModelScope.launch {
+                preferencesRepository.setPreferredLiveVariant(
+                    providerId = updatedChannel.providerId,
+                    logicalGroupId = updatedChannel.logicalGroupId,
+                    rawChannelId = nextVariant.rawChannelId
+                )
+                val resolvedUrl = resolvePlaybackUrl(nextVariant.streamUrl, updatedChannel.id, updatedChannel.providerId, ContentType.LIVE)
+                    ?: return@launch
+                if (!isActivePlaybackSession(requestVersion, nextVariant.streamUrl)) return@launch
+                recordLivePlayback(updatedChannel)
+                requestEpg(
+                    providerId = updatedChannel.providerId,
+                    epgChannelId = updatedChannel.epgChannelId,
+                    streamId = updatedChannel.streamId,
+                    internalChannelId = updatedChannel.id
+                )
+                val streamInfo = com.streamvault.domain.model.StreamInfo(
+                    url = resolvedUrl,
+                    title = currentTitle,
+                    streamType = com.streamvault.domain.model.StreamType.UNKNOWN
+                )
+                if (!preparePlayer(streamInfo, requestVersion)) return@launch
+                playerEngine.play()
+            }
+            return true
+        }
+
         val nextStream = channel.alternativeStreams.firstOrNull { altUrl ->
             altUrl != currentStreamUrl &&
                 altUrl !in triedAlternativeStreams &&
@@ -2116,6 +2265,22 @@ class PlayerViewModel @Inject constructor(
             playerEngine.play()
         }
         return true
+    }
+
+    private fun nextLiveVariant(channel: com.streamvault.domain.model.Channel): com.streamvault.domain.model.LiveChannelVariant? {
+        val currentVariantId = channel.selectedVariantId.takeIf { it > 0 } ?: channel.id
+        return channel.variants.firstOrNull { variant ->
+            variant.rawChannelId != currentVariantId &&
+                variant.streamUrl.isNotBlank() &&
+                variant.streamUrl != currentStreamUrl &&
+                variant.streamUrl !in triedAlternativeStreams &&
+                (failedStreamsThisSession[variant.streamUrl] ?: 0) == 0
+        } ?: channel.variants.firstOrNull { variant ->
+            variant.rawChannelId != currentVariantId &&
+                variant.streamUrl.isNotBlank() &&
+                variant.streamUrl != currentStreamUrl &&
+                variant.streamUrl !in triedAlternativeStreams
+        }
     }
 
     private fun isCatchUpPlayback(): Boolean = currentStreamClassLabel == "Catch-up"

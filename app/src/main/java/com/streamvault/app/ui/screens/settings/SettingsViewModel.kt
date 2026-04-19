@@ -31,6 +31,9 @@ import com.streamvault.domain.model.ContentType
 import com.streamvault.domain.model.DecoderMode
 import com.streamvault.domain.model.ActiveLiveSource
 import com.streamvault.domain.model.CombinedM3uProfile
+import com.streamvault.domain.model.GroupedChannelLabelMode
+import com.streamvault.domain.model.LiveChannelGroupingMode
+import com.streamvault.domain.model.LiveVariantPreferenceMode
 import com.streamvault.domain.model.ProviderStatus
 import com.streamvault.domain.model.RecordingItem
 import com.streamvault.domain.model.RecordingStorageConfig
@@ -389,6 +392,24 @@ class SettingsViewModel @Inject constructor(
     fun setLiveChannelNumberingMode(mode: ChannelNumberingMode) {
         viewModelScope.launch {
             preferencesRepository.setLiveChannelNumberingMode(mode)
+        }
+    }
+
+    fun setLiveChannelGroupingMode(mode: LiveChannelGroupingMode) {
+        viewModelScope.launch {
+            preferencesRepository.setLiveChannelGroupingMode(mode)
+        }
+    }
+
+    fun setGroupedChannelLabelMode(mode: GroupedChannelLabelMode) {
+        viewModelScope.launch {
+            preferencesRepository.setGroupedChannelLabelMode(mode)
+        }
+    }
+
+    fun setLiveVariantPreferenceMode(mode: LiveVariantPreferenceMode) {
+        viewModelScope.launch {
+            preferencesRepository.setLiveVariantPreferenceMode(mode)
         }
     }
 

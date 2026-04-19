@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.domain.manager.ParentalControlManager
 import com.streamvault.domain.manager.ProgramReminderManager
+import com.streamvault.domain.manager.RecordingManager
 import com.streamvault.domain.model.Category
 import com.streamvault.domain.model.CategorySortMode
 import com.streamvault.domain.model.Channel
@@ -25,6 +26,7 @@ import com.streamvault.domain.repository.EpgSourceRepository
 import com.streamvault.domain.repository.FavoriteRepository
 import com.streamvault.domain.repository.ProviderRepository
 import com.streamvault.domain.usecase.GetCustomCategories
+import com.streamvault.domain.usecase.ScheduleRecording
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -58,6 +60,8 @@ class EpgViewModelTest {
     private val preferencesRepository: PreferencesRepository = mock()
     private val parentalControlManager: ParentalControlManager = mock()
     private val programReminderManager: ProgramReminderManager = mock()
+    private val scheduleRecording: ScheduleRecording = mock()
+    private val recordingManager: RecordingManager = mock()
     private val getCustomCategories by lazy { GetCustomCategories(favoriteRepository) }
     private val createdViewModels = mutableListOf<EpgViewModel>()
 
@@ -79,6 +83,7 @@ class EpgViewModelTest {
         whenever(favoriteRepository.getGroups(any<List<Long>>(), eq(ContentType.LIVE))).thenReturn(flowOf(emptyList()))
         whenever(favoriteRepository.getFavorites(any<Long>(), eq(ContentType.LIVE))).thenReturn(flowOf(emptyList()))
         whenever(favoriteRepository.getFavorites(any<List<Long>>(), eq(ContentType.LIVE))).thenReturn(flowOf(emptyList()))
+        whenever(recordingManager.observeRecordingItems()).thenReturn(flowOf(emptyList()))
     }
 
     @After
@@ -111,7 +116,9 @@ class EpgViewModelTest {
             preferencesRepository = preferencesRepository,
             parentalControlManager = parentalControlManager,
             programReminderManager = programReminderManager,
-            getCustomCategories = getCustomCategories
+            getCustomCategories = getCustomCategories,
+            scheduleRecording = scheduleRecording,
+            recordingManager = recordingManager
         ).also(createdViewModels::add)
 
     private fun clearViewModel(viewModel: EpgViewModel) {
@@ -316,7 +323,9 @@ class EpgViewModelTest {
             preferencesRepository = preferencesRepository,
             parentalControlManager = parentalControlManager,
             programReminderManager = programReminderManager,
-            getCustomCategories = getCustomCategories
+            getCustomCategories = getCustomCategories,
+            scheduleRecording = scheduleRecording,
+            recordingManager = recordingManager
         )
 
         advanceUntilIdle()
@@ -366,7 +375,9 @@ class EpgViewModelTest {
             preferencesRepository = preferencesRepository,
             parentalControlManager = parentalControlManager,
             programReminderManager = programReminderManager,
-            getCustomCategories = getCustomCategories
+            getCustomCategories = getCustomCategories,
+            scheduleRecording = scheduleRecording,
+            recordingManager = recordingManager
         )
 
         advanceUntilIdle()

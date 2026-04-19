@@ -7,6 +7,7 @@ import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamvault.app.di.AuxiliaryPlayerEngine
+import com.streamvault.app.ui.model.associateByAnyRawId
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.domain.manager.ParentalControlManager
 import com.streamvault.domain.model.Category
@@ -382,7 +383,7 @@ class MultiViewViewModel @Inject constructor(
             val channelIds = preferencesRepository.getMultiViewPreset(presetIndex).first()
             if (channelIds.isEmpty()) return@launch
             val channels = channelRepository.getChannelsByIds(channelIds).first()
-                .associateBy { it.id }
+                .associateByAnyRawId()
             multiViewManager.clearAll()
             channelIds.forEachIndexed { index, channelId ->
                 channels[channelId]?.let { channel ->

@@ -79,6 +79,7 @@ import com.streamvault.app.MainActivity
 import com.streamvault.app.cast.CastConnectionState
 import com.streamvault.app.ui.design.requestFocusSafely
 import com.streamvault.app.ui.screens.player.overlay.ChannelInfoOverlay
+import com.streamvault.app.ui.screens.player.overlay.ChannelVariantSelectionDialog
 import com.streamvault.app.ui.screens.player.overlay.CategoryListOverlay
 import com.streamvault.app.ui.screens.player.overlay.ChannelListOverlay
 import com.streamvault.app.ui.screens.player.overlay.DiagnosticsOverlay
@@ -197,6 +198,7 @@ fun PlayerScreen(
     val timeshiftUiState by viewModel.timeshiftUiState.collectAsStateWithLifecycle()
 
     var showTrackSelection by remember { mutableStateOf<TrackType?>(null) }
+    var showVariantSelection by remember { mutableStateOf(false) }
     var showSpeedSelection by remember { mutableStateOf(false) }
     var showProgramHistory by remember { mutableStateOf(false) }
     var showSplitDialog by remember { mutableStateOf(false) }
@@ -281,7 +283,7 @@ fun PlayerScreen(
 
     // Consolidated focus management for all overlays
     val liveOverlayVisible = contentType == "LIVE" && (showChannelListOverlay || showCategoryListOverlay || showEpgOverlay || showChannelInfoOverlay)
-    val anyOverlayVisible = liveOverlayVisible || showTrackSelection != null || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker || showDiagnostics
+    val anyOverlayVisible = liveOverlayVisible || showTrackSelection != null || showVariantSelection || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker || showDiagnostics
 
     LaunchedEffect(contentType, showCategoryListOverlay, showChannelListOverlay, showEpgOverlay, showChannelInfoOverlay) {
         if (contentType == "LIVE" && (showCategoryListOverlay || showChannelListOverlay || showEpgOverlay || showChannelInfoOverlay)) {
@@ -325,6 +327,17 @@ fun PlayerScreen(
         if (lastResolutionBadgeLabel == nextLabel) {
             showResolution = false
         }
+    }
+
+    LaunchedEffect(
+        playbackState,
+        videoFormat.width,
+        videoFormat.height,
+        videoFormat.bitrate,
+        videoFormat.frameRate,
+        currentChannel?.selectedVariantId
+    ) {
+        viewModel.recordLiveVariantObservation(playbackState, videoFormat)
     }
 
     if (!isInPictureInPictureMode && showProgramHistory) {
@@ -389,10 +402,10 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(showControls, showTrackSelection, showSpeedSelection, showProgramHistory, showSplitDialog, showEpisodePicker) {
+    LaunchedEffect(showControls, showTrackSelection, showVariantSelection, showSpeedSelection, showProgramHistory, showSplitDialog, showEpisodePicker) {
         if (!showControls) {
             viewModel.cancelControlsAutoHide()
-        } else if (showTrackSelection != null || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker) {
+        } else if (showTrackSelection != null || showVariantSelection || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker) {
             viewModel.cancelControlsAutoHide()
         } else {
             viewModel.hideControlsAfterDelay()
@@ -417,6 +430,7 @@ fun PlayerScreen(
         showEpisodePicker,
         showSpeedSelection,
         showTrackSelection,
+        showVariantSelection,
         showDiagnostics,
         showChannelInfoOverlay,
         showChannelListOverlay,
@@ -433,6 +447,7 @@ fun PlayerScreen(
                 showSplitDialog -> showSplitDialog = false
                 showEpisodePicker -> showEpisodePicker = false
                 showSpeedSelection -> showSpeedSelection = false
+                showVariantSelection -> showVariantSelection = false
                 showTrackSelection != null -> showTrackSelection = null
                 showDiagnostics -> viewModel.toggleDiagnostics()
                 showChannelInfoOverlay -> viewModel.closeChannelInfoOverlay()
@@ -489,7 +504,7 @@ fun PlayerScreen(
                 if (showChannelListOverlay || showCategoryListOverlay || showEpgOverlay) {
                     return@onPreviewKeyEvent false
                 }
-                if (showTrackSelection != null || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker) {
+                if (showTrackSelection != null || showVariantSelection || showSpeedSelection || showProgramHistory || showSplitDialog || showEpisodePicker) {
                     return@onPreviewKeyEvent false
                 }
                 if (showChannelInfoOverlay && channelInfoSubPanelOpen) {
@@ -521,11 +536,27 @@ fun PlayerScreen(
             .onKeyEvent { event ->
                 // Only handle KeyDown to avoid double actions
                 if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                    if (showTrackSelection != null || showSpeedSelection) {
+                    if (showTrackSelection != null || showVariantSelection || showSpeedSelection) {
                         if (showSpeedSelection) {
                             return@onKeyEvent when (event.nativeKeyEvent.keyCode) {
                                 KeyEvent.KEYCODE_BACK -> {
                                     showSpeedSelection = false
+                                    true
+                                }
+                                KeyEvent.KEYCODE_DPAD_UP,
+                                KeyEvent.KEYCODE_DPAD_DOWN,
+                                KeyEvent.KEYCODE_DPAD_LEFT,
+                                KeyEvent.KEYCODE_DPAD_RIGHT,
+                                KeyEvent.KEYCODE_DPAD_CENTER,
+                                KeyEvent.KEYCODE_ENTER,
+                                KeyEvent.KEYCODE_NUMPAD_ENTER -> false
+                                else -> true
+                            }
+                        }
+                        if (showVariantSelection) {
+                            return@onKeyEvent when (event.nativeKeyEvent.keyCode) {
+                                KeyEvent.KEYCODE_BACK -> {
+                                    showVariantSelection = false
                                     true
                                 }
                                 KeyEvent.KEYCODE_DPAD_UP,
@@ -946,6 +977,12 @@ fun PlayerScreen(
                 onSelectVideo = viewModel::selectVideoQuality,
                 onSelectSubtitle = viewModel::selectSubtitleTrack
             )
+            ChannelVariantSelectionDialog(
+                visible = showVariantSelection,
+                channel = currentChannel,
+                onDismiss = { showVariantSelection = false },
+                onSelectVariant = viewModel::selectLiveVariant
+            )
             PlayerSpeedSelectionDialog(
                 visible = showSpeedSelection,
                 selectedSpeed = playbackSpeed,
@@ -1095,11 +1132,13 @@ fun PlayerScreen(
                     subtitleTrackCount = availableSubtitleTracks.size,
                     audioTrackCount = availableAudioTracks.size,
                     videoQualityCount = availableVideoQualities.size,
+                    channelVariantCount = currentChannel?.variants?.size ?: 0,
                     isMuted = isMuted,
                     onToggleMute = viewModel::toggleMute,
                     onOpenSubtitleTracks = { showTrackSelection = TrackType.TEXT },
                     onOpenAudioTracks = { showTrackSelection = TrackType.AUDIO },
                     onOpenVideoTracks = { showTrackSelection = TrackType.VIDEO },
+                    onOpenVariants = { showVariantSelection = true },
                     onEnterPictureInPicture = enterPictureInPicture,
                     isCastConnected = castConnectionState == CastConnectionState.CONNECTED,
                     onCast = { viewModel.castCurrentMedia { mainActivity?.openCastRouteChooser() } },

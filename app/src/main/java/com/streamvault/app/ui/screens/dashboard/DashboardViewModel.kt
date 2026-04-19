@@ -3,6 +3,7 @@ package com.streamvault.app.ui.screens.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.streamvault.app.BuildConfig
+import com.streamvault.app.ui.model.orderedByRequestedRawIds
 import com.streamvault.data.preferences.PreferencesRepository
 import com.streamvault.data.sync.SyncManager
 import com.streamvault.app.update.AppUpdateInstaller
@@ -402,10 +403,7 @@ class DashboardViewModel @Inject constructor(
         if (ids.isEmpty()) return flowOf(emptyList())
 
         return channelRepository.getChannelsByIds(ids).map { channels ->
-            val channelMap = channels.associateBy { it.id }
-            ids.mapNotNull { id ->
-                channelMap[id]
-            }
+            channels.orderedByRequestedRawIds(ids)
         }
     }
 
