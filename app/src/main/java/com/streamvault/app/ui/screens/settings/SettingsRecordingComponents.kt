@@ -208,12 +208,50 @@ internal fun BackupImportPreviewDialog(
         onDismissRequest = onDismiss,
         widthFraction = 0.58f,
         content = {
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_preferences), preview.preferenceCount, 0)
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_providers), preview.providerCount, preview.providerConflicts)
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_saved), preview.favoriteCount + preview.groupCount + preview.protectedCategoryCount, preview.favoriteConflicts + preview.groupConflicts + preview.protectedCategoryConflicts)
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_history), preview.playbackHistoryCount, preview.historyConflicts)
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_multiview), preview.multiViewPresetCount, 0)
-            BackupPreviewRow(stringResource(R.string.settings_backup_section_recordings), preview.scheduledRecordingCount, preview.recordingConflicts)
+            // Each row combines preview info (count + conflict status) with the
+            // include/exclude toggle — avoids listing every section twice.
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_preferences),
+                itemCount = preview.preferenceCount,
+                conflictCount = 0,
+                included = plan.importPreferences,
+                onIncludedChange = onImportPreferencesChanged,
+            )
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_providers),
+                itemCount = preview.providerCount,
+                conflictCount = preview.providerConflicts,
+                included = plan.importProviders,
+                onIncludedChange = onImportProvidersChanged,
+            )
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_saved),
+                itemCount = preview.favoriteCount + preview.groupCount + preview.protectedCategoryCount,
+                conflictCount = preview.favoriteConflicts + preview.groupConflicts + preview.protectedCategoryConflicts,
+                included = plan.importSavedLibrary,
+                onIncludedChange = onImportSavedLibraryChanged,
+            )
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_history),
+                itemCount = preview.playbackHistoryCount,
+                conflictCount = preview.historyConflicts,
+                included = plan.importPlaybackHistory,
+                onIncludedChange = onImportPlaybackHistoryChanged,
+            )
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_multiview),
+                itemCount = preview.multiViewPresetCount,
+                conflictCount = 0,
+                included = plan.importMultiViewPresets,
+                onIncludedChange = onImportMultiViewChanged,
+            )
+            BackupSectionRow(
+                title = stringResource(R.string.settings_backup_section_recordings),
+                itemCount = preview.scheduledRecordingCount,
+                conflictCount = preview.recordingConflicts,
+                included = plan.importRecordingSchedules,
+                onIncludedChange = onImportRecordingSchedulesChanged,
+            )
             Text(
                 text = stringResource(R.string.settings_backup_conflict_strategy),
                 style = MaterialTheme.typography.titleSmall,
@@ -231,17 +269,6 @@ internal fun BackupImportPreviewDialog(
                     onClick = { onStrategySelected(BackupConflictStrategy.REPLACE_EXISTING) }
                 )
             }
-            Text(
-                text = stringResource(R.string.settings_backup_import_sections),
-                style = MaterialTheme.typography.titleSmall,
-                color = Primary
-            )
-            BackupToggleRow(stringResource(R.string.settings_backup_section_preferences), plan.importPreferences, onImportPreferencesChanged)
-            BackupToggleRow(stringResource(R.string.settings_backup_section_providers), plan.importProviders, onImportProvidersChanged)
-            BackupToggleRow(stringResource(R.string.settings_backup_section_saved), plan.importSavedLibrary, onImportSavedLibraryChanged)
-            BackupToggleRow(stringResource(R.string.settings_backup_section_history), plan.importPlaybackHistory, onImportPlaybackHistoryChanged)
-            BackupToggleRow(stringResource(R.string.settings_backup_section_multiview), plan.importMultiViewPresets, onImportMultiViewChanged)
-            BackupToggleRow(stringResource(R.string.settings_backup_section_recordings), plan.importRecordingSchedules, onImportRecordingSchedulesChanged)
         },
         footer = {
             PremiumDialogFooterButton(
@@ -257,33 +284,54 @@ internal fun BackupImportPreviewDialog(
     )
 }
 
+/**
+ * Single dialog row that combines the section preview (item count + conflict
+ * status) with the include/exclude switch — replaces the older split between
+ * `BackupPreviewRow` (read-only) and `BackupToggleRow` (interactive) that
+ * listed every section name twice.
+ *
+ * Switch colors are pulled from the local app palette (`Primary`) so the
+ * control no longer renders with the unrelated default M3 brand color.
+ */
 @Composable
-private fun BackupPreviewRow(
+private fun BackupSectionRow(
     title: String,
     itemCount: Int,
-    conflictCount: Int
+    conflictCount: Int,
+    included: Boolean,
+    onIncludedChange: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = OnBackground)
             Text(
                 text = if (conflictCount > 0) {
-                    stringResource(R.string.settings_backup_conflict_count, conflictCount)
+                    stringResource(
+                        R.string.settings_backup_section_meta_with_conflicts,
+                        itemCount,
+                        conflictCount,
+                    )
                 } else {
-                    stringResource(R.string.settings_backup_no_conflicts)
+                    stringResource(R.string.settings_backup_section_meta_no_conflicts, itemCount)
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (conflictCount > 0) Secondary else OnSurfaceDim
+                color = if (conflictCount > 0) Secondary else OnSurfaceDim,
             )
         }
-        Text(
-            text = stringResource(R.string.settings_backup_item_count, itemCount),
-            style = MaterialTheme.typography.labelLarge,
-            color = OnBackground
+        Switch(
+            checked = included,
+            onCheckedChange = onIncludedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = OnBackground,
+                checkedTrackColor = Primary,
+                uncheckedThumbColor = OnSurfaceDim,
+                uncheckedTrackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.10f),
+                uncheckedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+            ),
         )
     }
 }
@@ -311,21 +359,6 @@ private fun BackupStrategyChip(
     }
 }
 
-@Composable
-private fun BackupToggleRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = OnBackground)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
