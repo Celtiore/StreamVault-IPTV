@@ -286,6 +286,12 @@ fun SettingsScreen(
         uri?.let { viewModel.exportConfig(it.toString()) }
     }
 
+    val driveSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.completeDriveSignIn(result.data)
+    }
+
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -1068,6 +1074,22 @@ fun SettingsScreen(
                                     }
                                 }
                             }
+                        }
+                        item {
+                            DriveBackupSection(
+                                authState = uiState.driveAuthState,
+                                syncStatus = uiState.driveSyncStatus,
+                                isBusy = uiState.driveIsBusy,
+                                onSignIn = {
+                                    scope.launch {
+                                        val intent = viewModel.beginDriveSignIn()
+                                        if (intent != null) driveSignInLauncher.launch(intent)
+                                    }
+                                },
+                                onSignOut = viewModel::signOutDrive,
+                                onPush = viewModel::pushBackupToDrive,
+                                onPull = viewModel::pullBackupFromDrive,
+                            )
                         }
                     }
 

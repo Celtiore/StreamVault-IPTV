@@ -81,6 +81,9 @@ dependencies {
     implementation(libs.core.ktx)
     implementation(libs.documentfile)
 
+    // Google Sign-In (for Drive backup sync — see app/ui/screens/settings/drive)
+    implementation(libs.play.services.auth)
+
     // Unit tests
     testImplementation(libs.junit)
     testImplementation(libs.truth)

@@ -601,6 +601,15 @@
     <string name="settings_backup_subtitle">Export or import favorites, groups, and preferences.</string>
     <string name="settings_backup_data">Export Data</string>
     <string name="settings_restore_data">Import Data</string>
+    <string name="settings_drive_section_title">Google Drive sync</string>
+    <string name="settings_drive_section_subtitle">Sync your backup to a private folder on your Google Drive. The folder is invisible in the Drive UI and removed when the app is uninstalled.</string>
+    <string name="settings_drive_signin">Connect to Google Drive</string>
+    <string name="settings_drive_signin_description">Sign in to enable backup sync to your private Drive folder.</string>
+    <string name="settings_drive_signout">Sign out</string>
+    <string name="settings_drive_push">Push to Drive</string>
+    <string name="settings_drive_push_subtitle">Upload the current backup, replacing the remote copy.</string>
+    <string name="settings_drive_pull">Pull from Drive</string>
+    <string name="settings_drive_pull_subtitle">Download the remote backup and review changes before importing.</string>
     <string name="settings_backup_preview_title">Review Backup Import</string>
     <string name="settings_backup_preview_subtitle">Backup version %1$d detected. Choose what to import before making changes.</string>
     <string name="settings_backup_conflict_strategy">Conflict strategy</string>

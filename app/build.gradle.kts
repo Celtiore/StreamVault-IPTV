@@ -195,6 +195,7 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.mediarouter)
     implementation(libs.play.services.cast.framework)
+    implementation(libs.play.services.auth)
 
     // Test
     testImplementation(libs.junit)

@@ -491,6 +491,15 @@
     <string name="settings_backup_subtitle">Exportez ou importez des favoris, des groupes et des préférences.</string>
     <string name="settings_backup_data">Exporter des données</string>
     <string name="settings_restore_data">Importer des données</string>
+    <string name="settings_drive_section_title">Synchronisation Google Drive</string>
+    <string name="settings_drive_section_subtitle">Synchronise ta sauvegarde dans un dossier privé de ton Google Drive. Ce dossier est invisible dans l\'interface Drive et est supprimé à la désinstallation de l\'app.</string>
+    <string name="settings_drive_signin">Se connecter à Google Drive</string>
+    <string name="settings_drive_signin_description">Connecte-toi pour activer la synchronisation vers ton dossier Drive privé.</string>
+    <string name="settings_drive_signout">Se déconnecter</string>
+    <string name="settings_drive_push">Envoyer vers Drive</string>
+    <string name="settings_drive_push_subtitle">Téléverse la sauvegarde courante en remplaçant la copie distante.</string>
+    <string name="settings_drive_pull">Récupérer depuis Drive</string>
+    <string name="settings_drive_pull_subtitle">Télécharge la sauvegarde distante et examine les changements avant import.</string>
     <string name="settings_backup_preview_title">Vérifier l\'importation de sauvegarde</string>
     <string name="settings_backup_preview_subtitle">Version de sauvegarde %1$d détectée. Choisissez ce que vous souhaitez importer avant d\'apporter des modifications.</string>
     <string name="settings_backup_conflict_strategy">Stratégie de conflit</string>
