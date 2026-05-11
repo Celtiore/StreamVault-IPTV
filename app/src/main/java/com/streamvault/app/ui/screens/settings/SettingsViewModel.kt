@@ -77,6 +77,7 @@ class SettingsViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val internetSpeedTestRunner: InternetSpeedTestRunner,
     private val backupManager: BackupManager,
+    private val driveBackupSyncManager: com.streamvault.domain.manager.DriveBackupSyncManager,
     private val recordingManager: RecordingManager,
     private val parentalControlManager: ParentalControlManager,
     private val syncManager: SyncManager,
@@ -107,6 +108,12 @@ class SettingsViewModel @Inject constructor(
         exportBackup = exportBackup,
         importBackup = importBackup,
         uiState = _uiState
+    )
+    private val driveBackupActions = SettingsDriveBackupActions(
+        driveBackupSyncManager = driveBackupSyncManager,
+        backupManager = backupManager,
+        uiState = _uiState,
+        scope = viewModelScope,
     )
     private val recordingActions = SettingsRecordingActions(
         appContext = application,
@@ -842,6 +849,22 @@ class SettingsViewModel @Inject constructor(
     fun confirmBackupImport() {
         backupActions.confirmBackupImport(viewModelScope)
     }
+
+    // ── Google Drive backup sync ─────────────────────────────────────────────
+
+    /** Returns the Sign-In intent the caller must launch via ActivityResultLauncher. */
+    suspend fun beginDriveSignIn(): android.content.Intent? =
+        driveBackupActions.beginSignIn()
+
+    fun completeDriveSignIn(intentData: android.content.Intent?) {
+        driveBackupActions.completeSignIn(intentData)
+    }
+
+    fun signOutDrive() = driveBackupActions.signOut()
+
+    fun pushBackupToDrive() = driveBackupActions.pushBackup()
+
+    fun pullBackupFromDrive() = driveBackupActions.pullBackup()
 
     fun stopRecording(recordingId: String) {
         recordingActions.stopRecording(viewModelScope, recordingId)
