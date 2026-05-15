@@ -7,9 +7,11 @@
     <string name="nav_series">Série</string>
     <string name="nav_epg">Guider</string>
     <string name="nav_settings">Paramètres</string>
+    <string name="nav_plugins">Plugins</string>
     <string name="welcome_enter_app">Entrez dans l’application</string>
     <string name="welcome_manage_providers">Gérer les fournisseurs</string>
     <string name="welcome_setup_provider">Fournisseur d’installation</string>
+    <string name="welcome_setup_later">Configurer plus tard</string>
     <string name="welcome_version">v1.0.3</string>
     <string name="welcome_loading_title">Préparation de votre bibliothèque</string>
     <string name="welcome_loading_subtitle">Ouverture du bon écran pour cet appareil.</string>
@@ -1409,6 +1411,7 @@
     <string name="settings_surface_mode">Surface vidéo</string>
     <string name="settings_surface_surface_view">SurfaceView</string>
     <string name="settings_surface_texture_view">TextureView</string>
+    <string name="settings_close_app">Quitter l’application</string>
     <string name="settings_sync_option_rebuild_index">Reconstruire l’index</string>
     <string name="settings_sync_option_sync_now">Synchroniser maintenant</string>
     <string name="settings_time_format">Format d’heure</string>
