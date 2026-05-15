@@ -17,12 +17,12 @@
 | group | groupe | |
 | custom group | groupe personnalisé | |
 | favorite | favori | |
-| EPG | EPG | Inchangé. Pas de paraphrase « guide TV ». |
+| EPG | EPG | Inchangé. « guide TV » toléré en prose user-facing (cohérent avec EN `nav_epg = Guide`). |
 | catch-up | TV en différé | « catch-up » toléré dans contexte technique (API, params XMLTV). |
 | timeshift | différé direct | |
 | variant (stream) | variante (de flux) | |
 | backup | sauvegarde | |
-| playlist | playlist (M3U) | Mot entré dans l'usage. Ne pas traduire en « liste de lecture ». |
+| playlist | playlist (M3U) | « liste de lecture » toléré en prose user-facing pour les libellés M3U. |
 | stream | flux | |
 | settings | paramètres | « réglages » toléré ponctuellement. |
 | home | accueil | |
