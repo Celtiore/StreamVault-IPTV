@@ -1,0 +1,32 @@
+# EN	FR_canonique	FORBIDDEN_FR
+# Données canoniques du glossaire i18n FR — StreamVault IPTV
+# Format : 3 colonnes séparées par TAB. Lignes commençant par # ignorées.
+# Colonne FORBIDDEN_FR (pipe-séparée) : termes FR à interdire pour cette entrée.
+# Vide si aucune interdiction explicite.
+provider	fournisseur	provider
+channel	chaîne	canal
+group	groupe
+custom group	groupe personnalisé
+favorite	favori
+EPG	EPG	guide TV
+catch-up	TV en différé
+timeshift	différé direct
+variant	variante
+backup	sauvegarde
+playlist	playlist	liste de lecture
+stream	flux
+settings	paramètres
+home	accueil
+recording	enregistrement
+DVR	enregistreur
+seek	parcourir
+picture-in-picture	image dans l’image
+sleep timer	minuterie de veille
+theme	thème
+diagnostic	diagnostic
+passthrough	passthrough	passage|transfert direct
+pixel ratio	format d’image
+frame rate	fréquence d’image
+codec	codec
+HDR	HDR
+plugin	plugin	extension
