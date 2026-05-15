@@ -877,6 +877,12 @@
     <string name="player_diagnostics_resolution">Résolution</string>
     <string name="player_diagnostics_video_codec">Codec vidéo</string>
     <string name="player_diagnostics_audio_codec">Codec audio</string>
+    <string name="player_diagnostics_audio_decoder">Décodeur audio</string>
+    <string name="player_diagnostics_audio_output_path">Chemin audio</string>
+    <string name="player_diagnostics_ffmpeg">FFmpeg</string>
+    <string name="player_diagnostics_compatibility_source">Source de compatibilité</string>
+    <string name="player_diagnostics_compatibility_note">Note de compatibilité</string>
+    <string name="player_diagnostics_compatibility_note_value">La lecture utilise peut-être un chemin audio appris ou assisté pour la compatibilité de ce flux.</string>
     <string name="player_diagnostics_video_bitrate">Débit vidéo</string>
     <string name="player_diagnostics_dropped_frames">Images perdues</string>
     <string name="player_diagnostics_last_failure">Dernier échec</string>
