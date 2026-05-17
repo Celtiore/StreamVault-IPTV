@@ -185,6 +185,10 @@ internal fun PlayerViewModel.changeChannel(index: Int, isAutoFallback: Boolean =
         "changeChannel index=$index out of channelList bounds (size=${channelList.size})"
     }
     zapMetricsLogger.markIntent(channelList[index].id)
+    // M7 P2: notify the EPG preload policy as early as possible so any neighbour batch
+    // queued by HomeViewModel / EpgViewModel during the next 1500 ms is gated at the repo.
+    // Must precede preloadAdjacentChannel and requestEpg.
+    epgPreloadPolicy.notifyChannelSwitch()
     clearNumericChannelInput()
     if (currentChannelIndex != -1 && currentChannelIndex != index) {
         previousChannelIndex = currentChannelIndex
