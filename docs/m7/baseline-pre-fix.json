@@ -1,0 +1,206 @@
+{
+  "total_zaps": 15,
+  "gap_ms": {
+    "p50": 3265,
+    "p95": 11423,
+    "min": 167,
+    "max": 15816,
+    "avg": 4691
+  },
+  "release_to_first_frame_ms": {
+    "p50": 1307,
+    "p95": 4969,
+    "min": 725,
+    "max": 4969,
+    "avg": 2336
+  },
+  "epg_burst_at_t500": {
+    "p50": 0,
+    "p95": 0,
+    "min": 0,
+    "max": 0,
+    "avg": 0
+  },
+  "zaps": [
+    {
+      "channel_id": 318,
+      "intent_ts": 215860883,
+      "release_ts": 215866350,
+      "codec_start_ts": 215866566,
+      "first_frame_ts": 215864148,
+      "surface_gen": 1,
+      "gap_ms": 3265,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 10,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 321,
+      "intent_ts": 215874706,
+      "release_ts": null,
+      "codec_start_ts": null,
+      "first_frame_ts": 215877791,
+      "surface_gen": null,
+      "gap_ms": 3085,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 0,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 324,
+      "intent_ts": 215878992,
+      "release_ts": 215880428,
+      "codec_start_ts": 215881327,
+      "first_frame_ts": 215881331,
+      "surface_gen": 2,
+      "gap_ms": 2339,
+      "release_to_first_frame_ms": 903,
+      "epg_requests_count": 0,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 326,
+      "intent_ts": 215882062,
+      "release_ts": 215883345,
+      "codec_start_ts": 215884564,
+      "first_frame_ts": 215884607,
+      "surface_gen": 3,
+      "gap_ms": 2545,
+      "release_to_first_frame_ms": 1262,
+      "epg_requests_count": 10,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 314,
+      "intent_ts": 215885206,
+      "release_ts": 215887446,
+      "codec_start_ts": 215888607,
+      "first_frame_ts": 215888710,
+      "surface_gen": 5,
+      "gap_ms": 3504,
+      "release_to_first_frame_ms": 1264,
+      "epg_requests_count": 30,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 329,
+      "intent_ts": 215894536,
+      "release_ts": null,
+      "codec_start_ts": null,
+      "first_frame_ts": null,
+      "surface_gen": null,
+      "gap_ms": null,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 10,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 314,
+      "intent_ts": 215898525,
+      "release_ts": 215899855,
+      "codec_start_ts": 215901124,
+      "first_frame_ts": 215898692,
+      "surface_gen": 6,
+      "gap_ms": 167,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 10,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 326,
+      "intent_ts": 215902353,
+      "release_ts": null,
+      "codec_start_ts": null,
+      "first_frame_ts": 215904800,
+      "surface_gen": null,
+      "gap_ms": 2447,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 0,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 324,
+      "intent_ts": 215905467,
+      "release_ts": 215907021,
+      "codec_start_ts": 215908214,
+      "first_frame_ts": 215908328,
+      "surface_gen": 0,
+      "gap_ms": 2861,
+      "release_to_first_frame_ms": 1307,
+      "epg_requests_count": 78,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1166,
+      "intent_ts": 215939403,
+      "release_ts": 215943362,
+      "codec_start_ts": 215943904,
+      "first_frame_ts": 215944087,
+      "surface_gen": 2,
+      "gap_ms": 4684,
+      "release_to_first_frame_ms": 725,
+      "epg_requests_count": 10,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1167,
+      "intent_ts": 215952824,
+      "release_ts": 215963671,
+      "codec_start_ts": 215968395,
+      "first_frame_ts": 215968640,
+      "surface_gen": 3,
+      "gap_ms": 15816,
+      "release_to_first_frame_ms": 4969,
+      "epg_requests_count": 20,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1168,
+      "intent_ts": 215971346,
+      "release_ts": 215972471,
+      "codec_start_ts": 215972692,
+      "first_frame_ts": 215976256,
+      "surface_gen": 5,
+      "gap_ms": 4910,
+      "release_to_first_frame_ms": 3785,
+      "epg_requests_count": 0,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1167,
+      "intent_ts": 215987273,
+      "release_ts": null,
+      "codec_start_ts": null,
+      "first_frame_ts": 215998696,
+      "surface_gen": null,
+      "gap_ms": 11423,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 20,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1166,
+      "intent_ts": 216011975,
+      "release_ts": 216012590,
+      "codec_start_ts": 216016384,
+      "first_frame_ts": 216017067,
+      "surface_gen": 6,
+      "gap_ms": 5092,
+      "release_to_first_frame_ms": 4477,
+      "epg_requests_count": 0,
+      "epg_in_flight_t500": 0
+    },
+    {
+      "channel_id": 1167,
+      "intent_ts": 216021488,
+      "release_ts": 216026824,
+      "codec_start_ts": 216027056,
+      "first_frame_ts": 216025027,
+      "surface_gen": 7,
+      "gap_ms": 3539,
+      "release_to_first_frame_ms": null,
+      "epg_requests_count": 20,
+      "epg_in_flight_t500": 0
+    }
+  ]
+}
