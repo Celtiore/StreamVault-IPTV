@@ -1,6 +1,9 @@
 package com.streamvault.data.repository
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
 import com.google.common.truth.Truth.assertThat
+import com.streamvault.data.epg.EpgPreloadPolicy
 import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.ChannelDao
 import com.streamvault.data.local.dao.ProgramDao
@@ -56,6 +59,14 @@ class ProviderRepositoryImplTest {
     private val syncMetadataRepository: SyncMetadataRepository = mock()
     private val recordingAlarmScheduler: RecordingAlarmScheduler = mock()
     private val programReminderAlarmScheduler: ProgramReminderAlarmScheduler = mock()
+    private val epgPreloadPolicy: EpgPreloadPolicy = mock<EpgPreloadPolicy>().apply {
+        whenever(isGateOpen(any())).thenReturn(true)
+        whenever(maxNeighbours).thenReturn(EpgPreloadPolicy.MAX_NEIGHBOURS)
+    }
+    private val appContext: Context = mock<Context>().apply {
+        // ApplicationInfo with no FLAG_DEBUGGABLE → zapMetricsEnabled stays false in tests.
+        whenever(applicationInfo).thenReturn(ApplicationInfo().apply { flags = 0 })
+    }
     private val transactionRunner = object : DatabaseTransactionRunner {
         override suspend fun <T> inTransaction(block: suspend () -> T): T = block()
     }
@@ -76,7 +87,9 @@ class ProviderRepositoryImplTest {
         syncMetadataRepository = syncMetadataRepository,
         transactionRunner = transactionRunner,
         recordingAlarmScheduler = recordingAlarmScheduler,
-        programReminderAlarmScheduler = programReminderAlarmScheduler
+        programReminderAlarmScheduler = programReminderAlarmScheduler,
+        epgPreloadPolicy = epgPreloadPolicy,
+        appContext = appContext
     )
 
     private val repository = createRepository()

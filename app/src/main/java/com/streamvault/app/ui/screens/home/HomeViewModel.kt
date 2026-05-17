@@ -1222,7 +1222,9 @@ class HomeViewModel @Inject constructor(
         }
 
         val now = System.currentTimeMillis()
-        val fallbackChannels = missingChannels.take(10)
+        // M7 P2 SCOPE D3: cap Xtream now-playing fallback to 4 (was 10) to align with
+        // EpgPreloadPolicy.MAX_NEIGHBOURS. Repo also enforces the same cap.
+        val fallbackChannels = missingChannels.take(4)
         val programsByRequest = providerRepository.getProgramsForLiveStreams(
             providerId = providerId,
             requests = fallbackChannels.map { channel ->

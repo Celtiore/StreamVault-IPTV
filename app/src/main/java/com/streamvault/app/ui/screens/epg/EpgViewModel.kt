@@ -257,7 +257,10 @@ class EpgViewModel @Inject constructor(
 
     companion object {
         const val MAX_CHANNELS = 60
-        private const val MAX_XTREAM_GUIDE_FALLBACK_CHANNELS = 10
+        // M7 P2 SCOPE D3: cap Xtream neighbour fallback fan-out at 4 (was 10) to align with
+        // EpgPreloadPolicy.MAX_NEIGHBOURS and XTREAM_GUIDE_BATCH_CONCURRENCY. Caller-side cap
+        // is a defence-in-depth — the repo also enforces the same cap.
+        private const val MAX_XTREAM_GUIDE_FALLBACK_CHANNELS = 4
         private const val MAX_XTREAM_GUIDE_FALLBACK_PROGRAMS = 6
         const val LOOKBACK_MS = 60 * 60 * 1000L
         const val LOOKAHEAD_MS = 6 * 60 * 60 * 1000L

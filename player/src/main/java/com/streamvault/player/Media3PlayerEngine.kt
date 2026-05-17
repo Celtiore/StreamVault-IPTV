@@ -36,10 +36,12 @@ import com.streamvault.domain.model.StreamInfo
 import com.streamvault.domain.model.VideoFormat
 import com.streamvault.domain.repository.PlaybackCompatibilityRepository
 import com.streamvault.player.audio.PlayerAudioFocusController
+import com.streamvault.player.diagnostics.ZapMetricsLogger
 import com.streamvault.player.playback.ActiveDecoderPolicy
 import com.streamvault.player.playback.DefaultDecoderPreferencePolicy
 import com.streamvault.player.playback.DefaultPlaybackCompatibilityProfile
 import com.streamvault.player.playback.AudioVideoOffsetAudioSink
+import com.streamvault.player.playback.evaluateReuseStrict
 import com.streamvault.player.playback.PlaybackCodecSelector
 import com.streamvault.player.playback.PlaybackCompatibilityProfile
 import com.streamvault.player.playback.PlaybackBufferPolicies
@@ -72,6 +74,7 @@ import com.streamvault.player.ui.PlayerViewBinder
 import com.streamvault.player.ui.SubtitleStyleController
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +98,8 @@ class Media3PlayerEngine @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val playbackCompatibilityRepository: PlaybackCompatibilityRepository,
     private val audioCompatibilityMemoryStore: AudioCompatibilityMemoryStore,
-    private val playbackSupportSnapshotStore: PlaybackSupportSnapshotStore
+    private val playbackSupportSnapshotStore: PlaybackSupportSnapshotStore,
+    private val zapMetricsLogger: ZapMetricsLogger
 ) : PlayerEngine {
 
     companion object {
@@ -205,6 +209,9 @@ class Media3PlayerEngine @Inject constructor(
     override val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
     private val audioVideoOffsetUs = AtomicLong(0L)
+    // Surface generation counter for ZapMetricsLogger: incremented on each video decoder release,
+    // emitted on the next decoder initialization (matches Media3 "setting surface generation N+1" log).
+    private val surfaceGenerationCounter = AtomicInteger(0)
     private val _audioVideoOffsetMs = MutableStateFlow(0)
     override val audioVideoOffsetMs: StateFlow<Int> = _audioVideoOffsetMs.asStateFlow()
     private val _audioVideoSyncEnabled = MutableStateFlow(false)
@@ -1059,13 +1066,13 @@ class Media3PlayerEngine @Inject constructor(
                             oldFormat: Format,
                             newFormat: Format
                         ): DecoderReuseEvaluation {
-                            return DecoderReuseEvaluation(
+                            return evaluateReuseStrict(
                                 codecInfo.name,
                                 oldFormat,
-                                newFormat,
-                                DecoderReuseEvaluation.REUSE_RESULT_NO,
-                                DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED
-                            )
+                                newFormat
+                            ) {
+                                super.canReuseCodec(codecInfo, oldFormat, newFormat)
+                            }
                         }
                     })
                 }
@@ -1111,7 +1118,17 @@ class Media3PlayerEngine @Inject constructor(
                 selectedVideoDecoderName = decoderName
                 _playerStats.value = _playerStats.value.copy(videoDecoderName = decoderName)
                 Log.i(TAG, "video-decoder name=$decoderName policy=$activeDecoderPolicy surface=${_renderSurfaceType.value}")
+                zapMetricsLogger.markCodecStart()
+                zapMetricsLogger.markSurfaceGen(surfaceGenerationCounter.get())
                 refreshKnownBadCompatibilityRecords()
+            }
+
+            override fun onVideoDecoderReleased(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String
+            ) {
+                surfaceGenerationCounter.incrementAndGet()
+                zapMetricsLogger.markRelease()
             }
 
             override fun onAudioDecoderInitialized(
@@ -1190,6 +1207,7 @@ class Media3PlayerEngine @Inject constructor(
                     val ttff = System.currentTimeMillis() - prepareStartMs
                     _playerStats.value = _playerStats.value.copy(ttffMs = ttff)
                 }
+                zapMetricsLogger.markFirstFrame()
                 markPlaybackStarted("first-frame-success")
             }
         }

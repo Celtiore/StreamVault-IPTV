@@ -1,5 +1,10 @@
 package com.streamvault.data.repository
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.os.SystemClock
+import android.util.Log
+import com.streamvault.data.epg.EpgPreloadPolicy
 import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.*
 import com.streamvault.data.local.entity.ProviderEntity
@@ -24,6 +29,7 @@ import com.streamvault.domain.provider.IptvProvider
 import com.streamvault.domain.repository.LiveStreamProgramRequest
 import com.streamvault.domain.repository.ProviderRepository
 import com.streamvault.domain.repository.SyncMetadataRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CoroutineScope
@@ -54,12 +60,34 @@ class ProviderRepositoryImpl @Inject constructor(
     private val syncMetadataRepository: SyncMetadataRepository,
     private val transactionRunner: DatabaseTransactionRunner,
     private val recordingAlarmScheduler: RecordingAlarmScheduler,
-    private val programReminderAlarmScheduler: ProgramReminderAlarmScheduler
+    private val programReminderAlarmScheduler: ProgramReminderAlarmScheduler,
+    private val epgPreloadPolicy: EpgPreloadPolicy,
+    @ApplicationContext private val appContext: Context
 ) : ProviderRepository {
     private companion object {
         const val XTREAM_GUIDE_BATCH_CONCURRENCY = 4
         const val BACKGROUND_EPG_START_DELAY_MS = 15_000L
+        const val ZAP_METRICS_TAG = "ZapMetrics"
         val logger: Logger = Logger.getLogger(ProviderRepositoryImpl::class.java.name)
+    }
+
+    /**
+     * Debug-only flag mirroring [ZapMetricsLogger] gating policy.
+     *
+     * The :data module cannot depend on :player (player → data, not the inverse), so
+     * `markEpgRequest` is inlined here as a [Log.i] with the same JSON schema consumed by
+     * `scripts/parse-zap-metrics.py`. No-op on release builds.
+     */
+    private val zapMetricsEnabled: Boolean =
+        (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    private fun emitZapEpgRequest(streamId: Long) {
+        if (!zapMetricsEnabled) return
+        val ts = SystemClock.elapsedRealtime()
+        Log.i(
+            ZAP_METRICS_TAG,
+            """{"event":"epg_request","streamId":$streamId,"ts_ms":$ts,"elapsed_since_intent_ms":0}"""
+        )
     }
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -615,15 +643,31 @@ class ProviderRepositoryImpl @Inject constructor(
             return emptyMap()
         }
 
+        // M7 P2 gate (SCOPE D2): skip the entire neighbour batch while the user has switched
+        // channels in the last EpgPreloadPolicy.GATE_MS. Each per-provider call site issues its
+        // own batch through this method — without the gate, multi-provider lists multiplied
+        // the burst (baseline observed up to 78 EPG requests on a single zap, 8 providers × 10
+        // neighbours + current-channel overhead).
+        if (!epgPreloadPolicy.isGateOpen()) {
+            return normalizedRequests.associateWith {
+                Result.error("EPG neighbour preload gated post channel switch")
+            }
+        }
+
+        // M7 P2 cap (SCOPE D3): defence-in-depth against any caller that forgot to .take(N).
+        // Caller-side caps (EpgViewModel, HomeViewModel) are aligned to the same value.
+        val cappedRequests = normalizedRequests.take(epgPreloadPolicy.maxNeighbours)
+
         val providerEntity = providerDao.getById(providerId)
-            ?: return normalizedRequests.associateWith { Result.error("Provider $providerId not found") }
+            ?: return cappedRequests.associateWith { Result.error("Provider $providerId not found") }
 
         return when (providerEntity.type) {
             ProviderType.XTREAM_CODES -> when (val providerContextResult = createXtreamLiveProgramProviderContext(providerId)) {
                 is Result.Success -> coroutineScope {
                     val requestDispatcher = Dispatchers.IO.limitedParallelism(XTREAM_GUIDE_BATCH_CONCURRENCY)
-                    normalizedRequests
+                    cappedRequests
                         .map { request ->
+                            emitZapEpgRequest(request.streamId)
                             async(requestDispatcher) {
                                 request to fetchXtreamProgramsForLiveStream(
                                     providerId = providerId,
@@ -646,16 +690,16 @@ class ProviderRepositoryImpl @Inject constructor(
                         }
                         .toMap()
                 }
-                is Result.Error -> normalizedRequests.associateWith {
+                is Result.Error -> cappedRequests.associateWith {
                     Result.error(providerContextResult.message, providerContextResult.exception)
                 }
-                is Result.Loading -> normalizedRequests.associateWith {
+                is Result.Loading -> cappedRequests.associateWith {
                     Result.error("Unexpected loading state")
                 }
             }
             ProviderType.STALKER_PORTAL -> {
                 val stalkerProvider = createStalkerProviderFromEntity(providerEntity)
-                val results = normalizedRequests.associateWith { request ->
+                val results = cappedRequests.associateWith { request ->
                     stalkerProvider.getShortEpg(
                         request.epgChannelId?.takeIf { it.isNotBlank() } ?: request.streamId.toString(),
                         limit
@@ -670,7 +714,7 @@ class ProviderRepositoryImpl @Inject constructor(
                 }
                 results
             }
-            ProviderType.M3U -> normalizedRequests.associateWith {
+            ProviderType.M3U -> cappedRequests.associateWith {
                 Result.error("On-demand guide lookup is unavailable for this provider.")
             }
         }

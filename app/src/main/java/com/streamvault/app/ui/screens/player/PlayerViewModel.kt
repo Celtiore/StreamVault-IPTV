@@ -13,6 +13,7 @@ import com.streamvault.app.plugins.StreamVaultPluginManager
 import com.streamvault.app.util.isPlaybackComplete
 import com.streamvault.app.tv.LauncherRecommendationsManager
 import com.streamvault.app.tv.WatchNextManager
+import com.streamvault.data.epg.EpgPreloadPolicy
 import com.streamvault.data.remote.stalker.StalkerUrlFactory
 import com.streamvault.data.remote.xtream.XtreamStreamUrlResolver
 import com.streamvault.data.security.CredentialDecryptionException
@@ -55,6 +56,7 @@ import com.streamvault.player.PlaybackState
 import com.streamvault.player.PlayerEngine
 import com.streamvault.player.PlayerError
 import com.streamvault.player.PlayerSubtitleStyle
+import com.streamvault.player.diagnostics.ZapMetricsLogger
 import com.streamvault.player.timeshift.LiveTimeshiftBackend
 import com.streamvault.player.timeshift.LiveTimeshiftState
 import com.streamvault.player.timeshift.LiveTimeshiftStatus
@@ -98,6 +100,8 @@ class PlayerViewModel @Inject constructor(
     internal val seekThumbnailProvider: SeekThumbnailProvider,
     internal val livePreviewHandoffManager: LivePreviewHandoffManager,
     private val okHttpClient: OkHttpClient,
+    internal val zapMetricsLogger: ZapMetricsLogger,
+    internal val epgPreloadPolicy: EpgPreloadPolicy,
 ) : ViewModel() {
     companion object {
         private const val MAX_PROGRAM_HISTORY_ITEMS = 18
