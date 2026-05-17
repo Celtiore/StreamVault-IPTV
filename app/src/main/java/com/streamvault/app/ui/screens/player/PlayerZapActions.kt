@@ -184,6 +184,7 @@ internal fun PlayerViewModel.changeChannel(index: Int, isAutoFallback: Boolean =
     check(index in channelList.indices) {
         "changeChannel index=$index out of channelList bounds (size=${channelList.size})"
     }
+    zapMetricsLogger.markIntent(channelList[index].id)
     clearNumericChannelInput()
     if (currentChannelIndex != -1 && currentChannelIndex != index) {
         previousChannelIndex = currentChannelIndex

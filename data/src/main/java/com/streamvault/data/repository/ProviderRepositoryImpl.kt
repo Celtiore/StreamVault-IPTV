@@ -1,5 +1,9 @@
 package com.streamvault.data.repository
 
+import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.os.SystemClock
+import android.util.Log
 import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.dao.*
 import com.streamvault.data.local.entity.ProviderEntity
@@ -24,6 +28,7 @@ import com.streamvault.domain.provider.IptvProvider
 import com.streamvault.domain.repository.LiveStreamProgramRequest
 import com.streamvault.domain.repository.ProviderRepository
 import com.streamvault.domain.repository.SyncMetadataRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.CoroutineScope
@@ -54,12 +59,33 @@ class ProviderRepositoryImpl @Inject constructor(
     private val syncMetadataRepository: SyncMetadataRepository,
     private val transactionRunner: DatabaseTransactionRunner,
     private val recordingAlarmScheduler: RecordingAlarmScheduler,
-    private val programReminderAlarmScheduler: ProgramReminderAlarmScheduler
+    private val programReminderAlarmScheduler: ProgramReminderAlarmScheduler,
+    @ApplicationContext private val appContext: Context
 ) : ProviderRepository {
     private companion object {
         const val XTREAM_GUIDE_BATCH_CONCURRENCY = 4
         const val BACKGROUND_EPG_START_DELAY_MS = 15_000L
+        const val ZAP_METRICS_TAG = "ZapMetrics"
         val logger: Logger = Logger.getLogger(ProviderRepositoryImpl::class.java.name)
+    }
+
+    /**
+     * Debug-only flag mirroring [ZapMetricsLogger] gating policy.
+     *
+     * The :data module cannot depend on :player (player → data, not the inverse), so
+     * `markEpgRequest` is inlined here as a [Log.i] with the same JSON schema consumed by
+     * `scripts/parse-zap-metrics.py`. No-op on release builds.
+     */
+    private val zapMetricsEnabled: Boolean =
+        (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+
+    private fun emitZapEpgRequest(streamId: Long) {
+        if (!zapMetricsEnabled) return
+        val ts = SystemClock.elapsedRealtime()
+        Log.i(
+            ZAP_METRICS_TAG,
+            """{"event":"epg_request","streamId":$streamId,"ts_ms":$ts,"elapsed_since_intent_ms":0}"""
+        )
     }
 
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -624,6 +650,7 @@ class ProviderRepositoryImpl @Inject constructor(
                     val requestDispatcher = Dispatchers.IO.limitedParallelism(XTREAM_GUIDE_BATCH_CONCURRENCY)
                     normalizedRequests
                         .map { request ->
+                            emitZapEpgRequest(request.streamId)
                             async(requestDispatcher) {
                                 request to fetchXtreamProgramsForLiveStream(
                                     providerId = providerId,

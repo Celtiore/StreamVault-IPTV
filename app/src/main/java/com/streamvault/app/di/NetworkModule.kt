@@ -17,6 +17,7 @@ import com.streamvault.data.remote.xtream.OkHttpXtreamApiService
 import com.streamvault.data.remote.xtream.XtreamUrlFactory
 import com.streamvault.data.parser.XmltvParser
 import com.streamvault.player.AudioCompatibilityMemoryStore
+import com.streamvault.player.diagnostics.ZapMetricsLogger
 import com.streamvault.player.Media3PlayerEngine
 import com.streamvault.player.PlayerEngine
 import com.streamvault.player.PlaybackSupportSnapshotStore
@@ -117,13 +118,15 @@ object NetworkModule {
         okHttpClient: OkHttpClient,
         playbackCompatibilityRepository: com.streamvault.domain.repository.PlaybackCompatibilityRepository,
         audioCompatibilityMemoryStore: AudioCompatibilityMemoryStore,
-        playbackSupportSnapshotStore: PlaybackSupportSnapshotStore
+        playbackSupportSnapshotStore: PlaybackSupportSnapshotStore,
+        zapMetricsLogger: ZapMetricsLogger
     ): PlayerEngine = Media3PlayerEngine(
         context,
         okHttpClient,
         playbackCompatibilityRepository,
         audioCompatibilityMemoryStore,
-        playbackSupportSnapshotStore
+        playbackSupportSnapshotStore,
+        zapMetricsLogger
     )
 
     /**
@@ -137,13 +140,15 @@ object NetworkModule {
         okHttpClient: OkHttpClient,
         playbackCompatibilityRepository: com.streamvault.domain.repository.PlaybackCompatibilityRepository,
         audioCompatibilityMemoryStore: AudioCompatibilityMemoryStore,
-        playbackSupportSnapshotStore: PlaybackSupportSnapshotStore
+        playbackSupportSnapshotStore: PlaybackSupportSnapshotStore,
+        zapMetricsLogger: ZapMetricsLogger
     ): PlayerEngine = Media3PlayerEngine(
         context,
         okHttpClient,
         playbackCompatibilityRepository,
         audioCompatibilityMemoryStore,
-        playbackSupportSnapshotStore
+        playbackSupportSnapshotStore,
+        zapMetricsLogger
     ).apply {
         enableMediaSession = false
         bypassAudioFocus = true
