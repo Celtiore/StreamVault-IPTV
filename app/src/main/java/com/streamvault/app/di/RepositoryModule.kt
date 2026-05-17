@@ -1,5 +1,7 @@
 package com.streamvault.app.di
 
+import com.streamvault.data.epg.EpgPreloadPolicy
+import com.streamvault.data.epg.EpgPreloadPolicyImpl
 import com.streamvault.data.local.DatabaseTransactionRunner
 import com.streamvault.data.local.RoomDatabaseTransactionRunner
 import com.streamvault.data.preferences.PreferencesRepository
@@ -98,6 +100,9 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindCredentialCrypto(impl: AndroidKeystoreCredentialCrypto): CredentialCrypto
+
+    @Binds @Singleton
+    abstract fun bindEpgPreloadPolicy(impl: EpgPreloadPolicyImpl): EpgPreloadPolicy
 
     companion object {
         @Provides
