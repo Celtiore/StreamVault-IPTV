@@ -41,6 +41,7 @@ import com.streamvault.player.playback.ActiveDecoderPolicy
 import com.streamvault.player.playback.DefaultDecoderPreferencePolicy
 import com.streamvault.player.playback.DefaultPlaybackCompatibilityProfile
 import com.streamvault.player.playback.AudioVideoOffsetAudioSink
+import com.streamvault.player.playback.evaluateReuseStrict
 import com.streamvault.player.playback.PlaybackCodecSelector
 import com.streamvault.player.playback.PlaybackCompatibilityProfile
 import com.streamvault.player.playback.PlaybackBufferPolicies
@@ -1065,13 +1066,13 @@ class Media3PlayerEngine @Inject constructor(
                             oldFormat: Format,
                             newFormat: Format
                         ): DecoderReuseEvaluation {
-                            return DecoderReuseEvaluation(
+                            return evaluateReuseStrict(
                                 codecInfo.name,
                                 oldFormat,
-                                newFormat,
-                                DecoderReuseEvaluation.REUSE_RESULT_NO,
-                                DecoderReuseEvaluation.DISCARD_REASON_MAX_INPUT_SIZE_EXCEEDED
-                            )
+                                newFormat
+                            ) {
+                                super.canReuseCodec(codecInfo, oldFormat, newFormat)
+                            }
                         }
                     })
                 }
