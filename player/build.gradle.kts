@@ -20,6 +20,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        // Pure-JVM unit tests touching android.text.TextUtils (transitive via
+        // Media3 DecoderReuseEvaluation constructor) need default Android stubs.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 kotlin {
